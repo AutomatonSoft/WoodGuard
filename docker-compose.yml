@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: woodguard-postgres
+    environment:
+      POSTGRES_DB: woodguard
+      POSTGRES_USER: woodguard
+      POSTGRES_PASSWORD: woodguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - woodguard_postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: woodguard-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - woodguard_minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: woodguard-minio-init
+    depends_on:
+      - minio
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin
+        /usr/bin/mc mb --ignore-existing local/woodguard
+        exit 0
+
+volumes:
+  woodguard_postgres_data:
+  woodguard_minio_data:
