@@ -69,6 +69,13 @@ type UiMessages = {
   mapPreview: string;
   coordinates: string;
   autoDetectLocation: string;
+  useCurrentLocation: string;
+  useCurrentLocationDescription: string;
+  currentLocationStatus: string;
+  currentLocationSavedDraft: string;
+  currentLocationCoordinatesOnly: string;
+  currentLocationUnavailable: string;
+  currentLocationPermissionDenied: string;
   openMap: string;
   lastSync: string;
   selectedInvoice: string;
@@ -206,6 +213,13 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     mapPreview: "Map Preview",
     coordinates: "Coordinates",
     autoDetectLocation: "Auto Detect Location",
+    useCurrentLocation: "Use Current Location",
+    useCurrentLocationDescription: "Uses the browser location, fills the draft address and coordinates, then waits for your save.",
+    currentLocationStatus: "Detecting current location...",
+    currentLocationSavedDraft: "Current location loaded into the draft. Review and save to confirm.",
+    currentLocationCoordinatesOnly: "Current coordinates loaded into the draft. Address lookup failed, so review before saving.",
+    currentLocationUnavailable: "Browser geolocation is not available here.",
+    currentLocationPermissionDenied: "Location permission was denied.",
     openMap: "Open Map",
     lastSync: "Last Sync",
     selectedInvoice: "Selected Invoice",
@@ -341,6 +355,13 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     mapPreview: "Предпросмотр карты",
     coordinates: "Координаты",
     autoDetectLocation: "Определить геолокацию",
+    useCurrentLocation: "Использовать текущую локацию",
+    useCurrentLocationDescription: "Берет геопозицию браузера, подставляет адрес и координаты в черновик и ждет вашего сохранения.",
+    currentLocationStatus: "Определяем текущую локацию...",
+    currentLocationSavedDraft: "Текущая локация подставлена в черновик. Проверьте и сохраните для подтверждения.",
+    currentLocationCoordinatesOnly: "Координаты текущей локации подставлены в черновик. Адрес не удалось определить, проверьте перед сохранением.",
+    currentLocationUnavailable: "Геолокация браузера здесь недоступна.",
+    currentLocationPermissionDenied: "Доступ к геолокации запрещен.",
     openMap: "Открыть карту",
     lastSync: "Последняя синхронизация",
     selectedInvoice: "Выбранный инвойс",
@@ -476,6 +497,13 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     mapPreview: "Kartenvorschau",
     coordinates: "Koordinaten",
     autoDetectLocation: "Standort automatisch bestimmen",
+    useCurrentLocation: "Aktuellen Standort verwenden",
+    useCurrentLocationDescription: "Nutzt den Browser-Standort, fuellt Adresse und Koordinaten in den Entwurf und wartet dann auf Ihr Speichern.",
+    currentLocationStatus: "Aktueller Standort wird bestimmt...",
+    currentLocationSavedDraft: "Der aktuelle Standort wurde in den Entwurf uebernommen. Bitte pruefen und mit Speichern bestaetigen.",
+    currentLocationCoordinatesOnly: "Die aktuellen Koordinaten wurden in den Entwurf uebernommen. Die Adresse konnte nicht aufgeloest werden, bitte vor dem Speichern pruefen.",
+    currentLocationUnavailable: "Browser-Geolokation ist hier nicht verfuegbar.",
+    currentLocationPermissionDenied: "Der Zugriff auf die Geolokation wurde verweigert.",
     openMap: "Karte öffnen",
     lastSync: "Letzte Synchronisierung",
     selectedInvoice: "Ausgewählte Rechnung",
@@ -640,7 +668,9 @@ const MATERIAL_TYPE_LABELS: Record<Locale, Record<string, string>> = {
 };
 
 const BREAKDOWN_LABELS: Record<Locale, Record<string, string>> = {
-  en: {},
+  en: {
+    "invoice.geolocation.autofill": "Geolocation Auto-Fill",
+  },
   ru: {
     certificate_document: "Сертификат",
     certificate_memo: "Комментарий к сертификату",
@@ -710,6 +740,7 @@ const AUDIT_ACTION_LABELS: Record<Locale, Record<string, string>> = {
     "invoice.create": "Rechnung angelegt",
     "invoice.metadata.update": "Metadaten aktualisiert",
     "invoice.assessment.update": "Bewertung aktualisiert",
+    "invoice.geolocation.autofill": "Geolokation automatisch erkannt",
     "invoice.sync.warehub": "Warehub-Synchronisierung",
     "upload.create": "Datei hochgeladen",
   },
@@ -770,6 +801,18 @@ export function formatPercent(locale: Locale, value: number): string {
   return `${new Intl.NumberFormat(INTL_LOCALE[locale], { maximumFractionDigits: 0 }).format(value)}%`;
 }
 
+export function formatDate(locale: Locale, value: string): string {
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
+
+export function formatTime(locale: Locale, value: string): string {
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 export function formatDateTime(locale: Locale, value: string): string {
   return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
     dateStyle: "medium",
@@ -814,7 +857,7 @@ export function translateBreakdownLabel(locale: Locale, key: string, fallback: s
 }
 
 export function translateAuditAction(locale: Locale, value: string): string {
-  return AUDIT_ACTION_LABELS[locale][value] ?? value;
+  return AUDIT_ACTION_LABELS[locale][value] ?? titleize(value.replace(/\./g, " "));
 }
 
 export function translateStorageBackend(locale: Locale, value: string): string {

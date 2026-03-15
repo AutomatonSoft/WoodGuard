@@ -6,6 +6,7 @@ from models.audit import AuditLogListResponse
 from models.db import UserRecord
 from models.invoice import (
     AssessmentPayload,
+    GeolocationAutofillRequest,
     InvoiceCreate,
     InvoiceDetail,
     InvoiceListResponse,
@@ -92,10 +93,11 @@ def update_assessment(
 @router.post("/{invoice_id}/geolocation/autofill", response_model=InvoiceDetail)
 def autofill_geolocation(
     invoice_id: int,
+    payload: GeolocationAutofillRequest = Body(default=GeolocationAutofillRequest()),
     current_user: UserRecord = Depends(require_roles(UserRole.admin, UserRole.analyst, UserRole.reviewer)),
     db: Session = Depends(get_db),
 ):
-    return autofill_invoice_geolocation(db, invoice_id, actor=current_user)
+    return autofill_invoice_geolocation(db, invoice_id, payload=payload, actor=current_user)
 
 
 @router.get("/{invoice_id}/audit-logs", response_model=AuditLogListResponse)

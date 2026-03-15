@@ -35,13 +35,6 @@ CheckFn = Callable[[AssessmentPayload], bool]
 CHECKS: list[tuple[str, str, int, CheckFn]] = [
     ("certificate_document", "Certificate", 50, lambda a: _has_document(a.certificate.status, a.certificate.files)),
     ("certificate_memo", "Certificate memo", 2, lambda a: _has_memo(a.certificate.memo)),
-    (
-        "location_pictures_document",
-        "Location pictures",
-        10,
-        lambda a: _has_document(a.location_pictures.status, a.location_pictures.files),
-    ),
-    ("location_pictures_memo", "Location memo", 2, lambda a: _has_memo(a.location_pictures.memo)),
     ("notice_document", "Notice", 10, lambda a: _has_document(a.notice.status, a.notice.files)),
     ("notice_memo", "Notice memo", 2, lambda a: _has_memo(a.notice.memo)),
     (

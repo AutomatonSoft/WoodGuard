@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import { absoluteFileUrl } from "../lib/api";
 import { getMessages, translateDocumentStatus, type Locale } from "../lib/i18n";
 import type { Evidence } from "../lib/types";
@@ -19,6 +21,8 @@ export function EvidenceEditor({
   onUpload: (files: FileList | null) => void;
 }) {
   const t = getMessages(locale);
+  const inputId = useId();
+  const uploadedSummary = `${t.currentFiles}: ${evidence.files.length}`;
 
   return (
     <article className="evidenceCard">
@@ -45,7 +49,17 @@ export function EvidenceEditor({
       </div>
       <div className="formRow">
         <label>{t.upload}</label>
-        <input type="file" multiple onChange={(event) => onUpload(event.target.files)} />
+        <label className="uploadControl" htmlFor={inputId}>
+          <span className="uploadTrigger">{t.upload}</span>
+          <span className="uploadMeta">{uploadedSummary}</span>
+        </label>
+        <input
+          id={inputId}
+          className="fileInput"
+          type="file"
+          multiple
+          onChange={(event) => onUpload(event.target.files)}
+        />
       </div>
       <div className="fileList">
         {evidence.files.map((file) => (

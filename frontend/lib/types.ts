@@ -133,6 +133,13 @@ export interface ReferenceOptions {
   compliance_choices: ComplianceChoice[];
 }
 
+export interface ReverseGeocodeResult {
+  latitude: number;
+  longitude: number;
+  display_name: string;
+  provider: string;
+}
+
 export interface UploadResponse {
   filename: string;
   url: string;

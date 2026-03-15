@@ -15,11 +15,13 @@ import {
   getStoredToken,
   login,
   logout,
+  reverseGeocode,
   storeTokens,
   syncWarehub,
   updateAssessment,
   updateInvoice,
   uploadFile,
+  type GeolocationAutofillPayload,
   type InvoiceCreatePayload,
   type InvoiceMetadataPayload,
 } from "../lib/api";
@@ -29,8 +31,10 @@ import {
   SUPPORTED_LOCALES,
   detectPreferredLocale,
   formatCurrency,
+  formatDate,
   formatDateTime,
   formatPercent,
+  formatTime,
   getMessages,
   storeLocale,
   translateAuditAction,
@@ -59,12 +63,12 @@ import type {
   UserPublic,
 } from "../lib/types";
 import { EvidenceEditor } from "./evidence-editor";
+import { MapPicker } from "./map-picker";
 import { RiskRing } from "./risk-ring";
 
 
 const EVIDENCE_SECTIONS = [
   "certificate",
-  "location_pictures",
   "notice",
   "transport_papers",
   "geolocation_screenshot",
@@ -76,8 +80,58 @@ const STATUS_OPTIONS = ["pending", "partial", "paid", "cancelled", "draft", "unk
 type EvidenceKey = (typeof EVIDENCE_SECTIONS)[number];
 type ThemeMode = "light" | "dark";
 type WorkspaceTab = "overview" | "evidence" | "analytics";
+type FieldTone = "positive" | "negative" | "warning" | "neutral";
+
+type FactorySummaryView = {
+  name: string;
+  country: string | null;
+  invoiceCount: number;
+  highRiskCount: number;
+  remainingAmount: number;
+};
+
+type ExtraCopy = {
+  factoryFilter: string;
+  allFactories: string;
+  factories: string;
+  factoryHint: string;
+  mapPicker: string;
+  mapPickerHint: string;
+  dangerLabel: string;
+};
 
 const THEME_STORAGE_KEY = "woodguard_theme";
+const ALL_FACTORIES_VALUE = "__all_factories__";
+const EXTRA_COPY: Record<Locale, ExtraCopy> = {
+  en: {
+    factoryFilter: "Factory Filter",
+    allFactories: "All factories",
+    factories: "Factories",
+    factoryHint: "Derived from seller/company fields until a dedicated factories endpoint is available.",
+    mapPicker: "Map Geolocation Picker",
+    mapPickerHint: "Click on the map to place the geolocation pin.",
+    dangerLabel: "DANGER",
+  },
+  ru: {
+    factoryFilter: "\u0424\u0438\u043b\u044c\u0442\u0440 \u0444\u0430\u0431\u0440\u0438\u043a",
+    allFactories: "\u0412\u0441\u0435 \u0444\u0430\u0431\u0440\u0438\u043a\u0438",
+    factories: "\u0424\u0430\u0431\u0440\u0438\u043a\u0438",
+    factoryHint:
+      "\u041f\u043e\u043a\u0430 \u0447\u0442\u043e \u0441\u043f\u0438\u0441\u043e\u043a \u0441\u043e\u0431\u0440\u0430\u043d \u0438\u0437 seller/company, \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e\u0433\u043e endpoint \u0444\u0430\u0431\u0440\u0438\u043a.",
+    mapPicker: "\u0412\u044b\u0431\u043e\u0440 \u0433\u0435\u043e\u043b\u043e\u043a\u0430\u0446\u0438\u0438 \u043d\u0430 \u043a\u0430\u0440\u0442\u0435",
+    mapPickerHint: "\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u043f\u043e \u043a\u0430\u0440\u0442\u0435, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0442\u043e\u0447\u043a\u0443.",
+    dangerLabel: "DANGER",
+  },
+  de: {
+    factoryFilter: "Werksfilter",
+    allFactories: "Alle Werke",
+    factories: "Werke",
+    factoryHint: "Aus Seller-/Company-Feldern abgeleitet, bis ein eigener Factory-Endpunkt vorhanden ist.",
+    mapPicker: "Kartenauswahl der Geolokation",
+    mapPickerHint: "Klicke auf die Karte, um den Punkt zu setzen.",
+    dangerLabel: "DANGER",
+  },
+};
 
 
 function parseNumber(value: string): number | null {
@@ -129,6 +183,114 @@ function buildOpenStreetMapUrl(latitude: number, longitude: number): string {
 }
 
 
+function getFactoryName(invoice: Pick<InvoiceSummary, "seller_name" | "company_name">, fallback: string): string {
+  return normalizeText(invoice.seller_name) ?? normalizeText(invoice.company_name) ?? fallback;
+}
+
+
+function buildFactorySummaries(items: InvoiceSummary[], fallback: string): FactorySummaryView[] {
+  const factories = new Map<string, FactorySummaryView>();
+
+  for (const invoice of items) {
+    const factoryName = getFactoryName(invoice, fallback);
+    const current = factories.get(factoryName) ?? {
+      name: factoryName,
+      country: invoice.company_country_name ?? invoice.company_country ?? null,
+      invoiceCount: 0,
+      highRiskCount: 0,
+      remainingAmount: 0,
+    };
+
+    current.invoiceCount += 1;
+    current.remainingAmount += invoice.remaining_amount;
+    if (!current.country) {
+      current.country = invoice.company_country_name ?? invoice.company_country ?? null;
+    }
+    if (invoice.risk.risk_level === "high") {
+      current.highRiskCount += 1;
+    }
+
+    factories.set(factoryName, current);
+  }
+
+  return Array.from(factories.values()).sort((left, right) => {
+    if (right.highRiskCount !== left.highRiskCount) {
+      return right.highRiskCount - left.highRiskCount;
+    }
+    if (right.invoiceCount !== left.invoiceCount) {
+      return right.invoiceCount - left.invoiceCount;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+
+function getComplianceTone(value: AssessmentPayload["child_labor_ok"]): FieldTone {
+  switch (value) {
+    case "yes":
+      return "positive";
+    case "no":
+      return "negative";
+    default:
+      return "warning";
+  }
+}
+
+
+function getRiskTone(value: AssessmentPayload["personal_risk_level"]): FieldTone {
+  switch (value) {
+    case "low":
+      return "positive";
+    case "high":
+      return "negative";
+    case "medium":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+
+function buildMapSelectionLabel(latitude: number, longitude: number): string {
+  return `Map pin ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+}
+
+
+function buildCurrentLocationLabel(latitude: number, longitude: number): string {
+  return `Current location ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+}
+
+
+function shouldReplaceDerivedLocationText(value: string | null | undefined): boolean {
+  const normalized = value?.trim() ?? "";
+  return !normalized || normalized.startsWith("Map pin ") || normalized.startsWith("Current location ");
+}
+
+
+function getMeaningfulCompanyName(detail: InvoiceDetail | null): string | null {
+  const companyName = normalizeText(detail?.company_name);
+  if (!companyName) {
+    return null;
+  }
+  return companyName.trim().toLowerCase() === "unassigned supplier" ? null : companyName;
+}
+
+
+function hasGeolocationAutofillInput(detail: InvoiceDetail | null): boolean {
+  if (!detail) {
+    return false;
+  }
+
+  return Boolean(
+    normalizeText(detail.assessment.geolocation_source_text) ??
+    normalizeText(detail.seller_geolocation_label) ??
+    normalizeText(detail.seller_address) ??
+    normalizeText(detail.seller_name) ??
+    getMeaningfulCompanyName(detail),
+  );
+}
+
+
 export default function Page() {
   const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -142,8 +304,11 @@ export default function Page() {
   const [draft, setDraft] = useState<InvoiceDetail | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [search, setSearch] = useState("");
+  const [factoryFilter, setFactoryFilter] = useState(ALL_FACTORIES_VALUE);
   const deferredSearch = useDeferredValue(search);
   const [statusMessage, setStatusMessage] = useState<{ type: "error" | "info"; text: string } | null>(null);
+  const [isAutofillingGeolocation, setIsAutofillingGeolocation] = useState(false);
+  const [isUsingCurrentLocation, setIsUsingCurrentLocation] = useState(false);
   const [manualForm, setManualForm] = useState({
     invoice_number: "",
     company_name: "",
@@ -156,6 +321,7 @@ export default function Page() {
   });
   const [isPending, startTransition] = useTransition();
   const t = getMessages(locale);
+  const extraCopy = EXTRA_COPY[locale];
 
   useEffect(() => {
     setLocale(detectPreferredLocale());
@@ -263,13 +429,50 @@ export default function Page() {
     });
   }, []);
 
+  const factorySummaries = buildFactorySummaries(invoices, t.unassignedSupplier);
+
+  useEffect(() => {
+    if (factoryFilter === ALL_FACTORIES_VALUE) {
+      return;
+    }
+
+    if (!factorySummaries.some((factory) => factory.name === factoryFilter)) {
+      setFactoryFilter(ALL_FACTORIES_VALUE);
+    }
+  }, [factoryFilter, factorySummaries]);
+
   const filteredInvoices = invoices.filter((invoice) => {
+    if (factoryFilter !== ALL_FACTORIES_VALUE && getFactoryName(invoice, t.unassignedSupplier) !== factoryFilter) {
+      return false;
+    }
+
     if (!deferredSearch.trim()) {
       return true;
     }
+
     const haystack = `${invoice.invoice_number} ${invoice.company_name ?? ""} ${invoice.seller_name ?? ""}`.toLowerCase();
     return haystack.includes(deferredSearch.toLowerCase());
   });
+  const filteredInvoiceIdsKey = filteredInvoices.map((invoice) => invoice.id).join(",");
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    if (!filteredInvoices.length) {
+      setSelectedId(null);
+      setDraft(null);
+      setAuditLogs([]);
+      return;
+    }
+
+    if (selectedId && filteredInvoices.some((invoice) => invoice.id === selectedId)) {
+      return;
+    }
+
+    void handleSelect(filteredInvoices[0].id);
+  }, [currentUser, filteredInvoiceIdsKey, selectedId]);
 
   const setDraftValue = <K extends keyof InvoiceDetail>(field: K, value: InvoiceDetail[K]) => {
     setDraft((current) => (current ? { ...current, [field]: value } : current));
@@ -292,6 +495,29 @@ export default function Page() {
         : current,
     );
   };
+
+  function handleMapLocationPick(latitude: number, longitude: number) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const currentSource = current.assessment.geolocation_source_text?.trim() ?? "";
+      const nextSource = !currentSource || currentSource.startsWith("Map pin ")
+        ? buildMapSelectionLabel(latitude, longitude)
+        : current.assessment.geolocation_source_text;
+
+      return {
+        ...current,
+        assessment: {
+          ...current.assessment,
+          geolocation_latitude: latitude,
+          geolocation_longitude: longitude,
+          geolocation_source_text: nextSource,
+        },
+      };
+    });
+  }
 
   const toggleArraySelection = (field: "wood_species" | "material_types", value: string) => {
     setDraft((current) => {
@@ -469,13 +695,44 @@ export default function Page() {
       return;
     }
 
+    if (!hasGeolocationAutofillInput(draft)) {
+      setStatusMessage({
+        type: "error",
+        text: [t.geolocationLabel, t.address, t.sellerName, t.companyName].join(" / "),
+      });
+      return;
+    }
+
     try {
+      const payload: GeolocationAutofillPayload = {};
+      const companyName = getMeaningfulCompanyName(draft);
+      const companyCountry = normalizeText(draft.company_country);
+      const sellerName = normalizeText(draft.seller_name);
+      const sellerAddress = normalizeText(draft.seller_address);
+      const sellerGeolocationLabel = normalizeText(draft.seller_geolocation_label);
+      const geolocationSourceText = normalizeText(draft.assessment.geolocation_source_text);
+
+      if (companyName) payload.company_name = companyName;
+      if (companyCountry) payload.company_country = companyCountry;
+      if (sellerName) payload.seller_name = sellerName;
+      if (sellerAddress) payload.seller_address = sellerAddress;
+      if (sellerGeolocationLabel) payload.seller_geolocation_label = sellerGeolocationLabel;
+      if (geolocationSourceText) payload.geolocation_source_text = geolocationSourceText;
+
+      setIsAutofillingGeolocation(true);
       setStatusMessage({ type: "info", text: t.autoDetectLocation });
-      const updated = await autofillGeolocation(draft.id);
+      const updated = await autofillGeolocation(draft.id, payload);
       setDraft(updated);
       const audit = await getInvoiceAuditLogs(draft.id);
       setAuditLogs(audit.items);
-      setStatusMessage({ type: "info", text: t.dossierSaved });
+      const latitude = updated.assessment.geolocation_latitude ?? updated.seller_latitude;
+      const longitude = updated.assessment.geolocation_longitude ?? updated.seller_longitude;
+      setStatusMessage({
+        type: "info",
+        text: latitude !== null && longitude !== null
+          ? `${t.autoDetectLocation}: ${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`
+          : t.dossierSaved,
+      });
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         handleUnauthorized();
@@ -485,6 +742,98 @@ export default function Page() {
         type: "error",
         text: error instanceof Error ? error.message : t.loadInvoiceFailed,
       });
+    } finally {
+      setIsAutofillingGeolocation(false);
+    }
+  }
+
+  async function handleUseCurrentLocation() {
+    if (!draft) {
+      return;
+    }
+
+    if (typeof window === "undefined" || !("geolocation" in window.navigator)) {
+      setStatusMessage({ type: "error", text: t.currentLocationUnavailable });
+      return;
+    }
+
+    try {
+      setIsUsingCurrentLocation(true);
+      setStatusMessage({ type: "info", text: t.currentLocationStatus });
+
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        window.navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 0,
+        });
+      });
+
+      const latitude = Number(position.coords.latitude.toFixed(6));
+      const longitude = Number(position.coords.longitude.toFixed(6));
+      let derivedLabel = buildCurrentLocationLabel(latitude, longitude);
+      let resolvedAddress: string | null = null;
+      let reverseLookupFailed = false;
+
+      try {
+        const resolved = await reverseGeocode(latitude, longitude);
+        derivedLabel = resolved.display_name;
+        resolvedAddress = resolved.display_name;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        reverseLookupFailed = true;
+      }
+
+      setDraft((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const nextSellerAddress = normalizeText(current.seller_address) ?? resolvedAddress ?? current.seller_address;
+        const nextGeolocationLabel = shouldReplaceDerivedLocationText(current.seller_geolocation_label)
+          ? derivedLabel
+          : current.seller_geolocation_label;
+        const nextSource = shouldReplaceDerivedLocationText(current.assessment.geolocation_source_text)
+          ? derivedLabel
+          : current.assessment.geolocation_source_text;
+
+        return {
+          ...current,
+          seller_address: nextSellerAddress,
+          seller_geolocation_label: nextGeolocationLabel,
+          seller_latitude: latitude,
+          seller_longitude: longitude,
+          assessment: {
+            ...current.assessment,
+            geolocation_latitude: latitude,
+            geolocation_longitude: longitude,
+            geolocation_source_text: nextSource,
+          },
+        };
+      });
+
+      setStatusMessage({
+        type: "info",
+        text: reverseLookupFailed ? t.currentLocationCoordinatesOnly : t.currentLocationSavedDraft,
+      });
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" && error !== null && "code" in error ? Number((error as { code?: unknown }).code) : null;
+
+      setStatusMessage({
+        type: "error",
+        text:
+          errorCode === 1
+            ? t.currentLocationPermissionDenied
+            : error instanceof Error && error.message
+              ? error.message
+              : t.currentLocationUnavailable,
+      });
+    } finally {
+      setIsUsingCurrentLocation(false);
     }
   }
 
@@ -523,6 +872,35 @@ export default function Page() {
   const verifiedSectionsCount = evidenceRecords.filter((item) => item.status === "verified").length;
   const recentInvoices = filteredInvoices.slice(0, 6);
   const latestAuditEntry = auditLogs[0] ?? null;
+  const latestAuditDate = latestAuditEntry ? formatDate(locale, latestAuditEntry.created_at) : t.unset;
+  const latestAuditTime = latestAuditEntry ? formatTime(locale, latestAuditEntry.created_at) : null;
+  const filteredOpenExposure = filteredInvoices.reduce((total, invoice) => total + invoice.remaining_amount, 0);
+  const filteredCoverageAverage = filteredInvoices.length
+    ? filteredInvoices.reduce((total, invoice) => total + invoice.risk.coverage_percent, 0) / filteredInvoices.length
+    : 0;
+  const filteredHighRiskCount = filteredInvoices.filter((invoice) => invoice.risk.risk_level === "high").length;
+  const analyticsAlerts = draft
+    ? [
+        draft.assessment.child_labor_ok === "no"
+          ? {
+              title: t.childLabor,
+              text: translateBlocker(locale, "Child labor concern flagged."),
+            }
+          : null,
+        draft.assessment.human_rights_ok === "no"
+          ? {
+              title: t.humanRights,
+              text: translateBlocker(locale, "Human rights concern flagged."),
+            }
+          : null,
+        draft.assessment.personal_risk_level === "high"
+          ? {
+              title: t.personalRiskAssessment,
+              text: draft.assessment.risk_reason ?? translateBlocker(locale, "Reviewer marked this invoice as high risk."),
+            }
+          : null,
+      ].filter((item): item is { title: string; text: string } => Boolean(item))
+    : [];
   const notificationItems = draft
     ? [
         {
@@ -542,6 +920,9 @@ export default function Page() {
         },
       ]
     : [];
+  const canAutofillLocation = hasGeolocationAutofillInput(draft);
+  const isLocationActionPending = isAutofillingGeolocation || isUsingCurrentLocation;
+  const autofillLocationHint = [t.geolocationLabel, t.address, t.sellerName, t.companyName].join(" / ");
 
   const languageSwitcher = (
     <div className="localeSwitch" aria-label={t.language}>
@@ -575,7 +956,6 @@ export default function Page() {
       <section className="panel emptyPanel">
         <p className="eyebrow">{tabLabel}</p>
         <h2>{t.noInvoicesYet}</h2>
-        <p className="helperText">{t.indexDescription}</p>
         <button className="button" onClick={() => void handleSync()} disabled={!currentUser || currentUser.role === "viewer"}>
           {t.syncWarehub}
         </button>
@@ -679,15 +1059,31 @@ export default function Page() {
                 <div className="formRow"><label>{t.latitude}</label><input className="textInput" type="number" value={draft.seller_latitude ?? ""} onChange={(event) => setDraftValue("seller_latitude", parseNumber(event.target.value))} /></div>
                 <div className="formRow"><label>{t.longitude}</label><input className="textInput" type="number" value={draft.seller_longitude ?? ""} onChange={(event) => setDraftValue("seller_longitude", parseNumber(event.target.value))} /></div>
               </div>
-              <button className="button secondary" onClick={() => void handleAutofillGeolocation()}>
-                {t.autoDetectLocation}
-              </button>
+              <div className="gridTwo">
+                <button
+                  className="button secondary"
+                  onClick={() => void handleUseCurrentLocation()}
+                  disabled={isLocationActionPending}
+                >
+                  {t.useCurrentLocation}
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={() => void handleAutofillGeolocation()}
+                  disabled={isLocationActionPending || !canAutofillLocation}
+                  title={!canAutofillLocation ? autofillLocationHint : undefined}
+                >
+                  {t.autoDetectLocation}
+                </button>
+              </div>
+              <p className="helperText">{t.useCurrentLocationDescription}</p>
+              {!canAutofillLocation ? <p className="helperText">{autofillLocationHint}</p> : null}
             </div>
           </article>
         </section>
 
-        <section className="dashboardPanels bottomPanels">
-          <article className="panel cardBody geoCard">
+        <section className="dashboardPanels bottomPanels overviewBottomPanels">
+          <article className="panel cardBody geoCard geoCardExpanded">
             <div className="panelHead">
               <h2 className="sectionTitle">{t.geoSnapshot}</h2>
               <span className="panelBadge">{t.mapPreview}</span>
@@ -722,21 +1118,6 @@ export default function Page() {
                 {t.openMap}
               </a>
             ) : null}
-          </article>
-
-          <article className="panel cardBody insightCard">
-            <div className="panelHead">
-              <h2 className="sectionTitle">{t.notifications}</h2>
-              <span className="panelBadge">{t.latestActivity}</span>
-            </div>
-            <div className="notificationList">
-              {notificationItems.map((item) => (
-                <article className={`notificationItem ${item.tone}`} key={`${item.title}-${item.text}`}>
-                  <strong>{item.title}</strong>
-                  <span>{item.text}</span>
-                </article>
-              ))}
-            </div>
           </article>
         </section>
       </>
@@ -916,7 +1297,10 @@ export default function Page() {
           </article>
           <article className="panel metricCard">
             <span className="metricLabel">{t.latestActivity}</span>
-            <strong>{latestAuditEntry ? formatDateTime(locale, latestAuditEntry.created_at) : t.unset}</strong>
+            <strong className="metricValueDate">
+              <span>{latestAuditDate}</span>
+              {latestAuditTime ? <small>{latestAuditTime}</small> : null}
+            </strong>
           </article>
         </section>
 
@@ -926,9 +1310,20 @@ export default function Page() {
               <h2 className="sectionTitle">{t.riskInputs}</h2>
               <span className="panelBadge">{t.analyticsTab}</span>
             </div>
+            {analyticsAlerts.length ? (
+              <div className="alertGrid">
+                {analyticsAlerts.map((alert) => (
+                  <article className="notificationItem high analyticsAlert" key={`${alert.title}-${alert.text}`}>
+                    <span className="alertLabel">{extraCopy.dangerLabel}</span>
+                    <strong>{alert.title}</strong>
+                    <span>{alert.text}</span>
+                  </article>
+                ))}
+              </div>
+            ) : null}
             <div className="stack">
               <div className="gridTwo">
-                <div className="formRow">
+                <div className={`formRow toneField ${getComplianceTone(draft.assessment.child_labor_ok)}`}>
                   <label>{t.childLabor}</label>
                   <select
                     className="selectInput"
@@ -942,7 +1337,7 @@ export default function Page() {
                     ))}
                   </select>
                 </div>
-                <div className="formRow">
+                <div className={`formRow toneField ${getComplianceTone(draft.assessment.human_rights_ok)}`}>
                   <label>{t.humanRights}</label>
                   <select
                     className="selectInput"
@@ -958,7 +1353,7 @@ export default function Page() {
                 </div>
               </div>
               <div className="gridTwo">
-                <div className="formRow">
+                <div className={`formRow toneField ${getRiskTone(draft.assessment.personal_risk_level)}`}>
                   <label>{t.personalRiskAssessment}</label>
                   <select
                     className="selectInput"
@@ -978,7 +1373,7 @@ export default function Page() {
                     ))}
                   </select>
                 </div>
-                <div className="formRow">
+                <div className="formRow toneField neutral">
                   <label>{t.geolocationSource}</label>
                   <input
                     className="textInput"
@@ -986,6 +1381,17 @@ export default function Page() {
                     onChange={(event) => setAssessmentValue("geolocation_source_text", event.target.value || null)}
                   />
                 </div>
+              </div>
+              <div className="formRow">
+                <div className="panelHead compactPanelHead">
+                  <label>{extraCopy.mapPicker}</label>
+                  <span className="panelBadge hintBadge">{extraCopy.mapPickerHint}</span>
+                </div>
+                <MapPicker
+                  latitude={draft.assessment.geolocation_latitude ?? draft.seller_latitude}
+                  longitude={draft.assessment.geolocation_longitude ?? draft.seller_longitude}
+                  onChange={handleMapLocationPick}
+                />
               </div>
               <div className="gridTwo">
                 <div className="formRow">
@@ -1029,7 +1435,7 @@ export default function Page() {
             <div className="compactList">
               {draft.risk.blockers.length ? (
                 draft.risk.blockers.map((blocker) => (
-                  <article className="notificationItem high" key={blocker}>
+                  <article className="notificationItem high dangerCaps" key={blocker}>
                     <strong>{translateBlocker(locale, blocker)}</strong>
                   </article>
                 ))
@@ -1183,7 +1589,7 @@ export default function Page() {
                   {t.signIn}
                 </button>
                 <p className="helperText">{t.defaultAdminNote}</p>
-                {statusMessage ? <div className={`statusBar ${statusMessage.type}`}>{statusMessage.text}</div> : null}
+                {statusMessage ? <div key={`${statusMessage.type}-${statusMessage.text}`} className={`statusBar ${statusMessage.type}`}>{statusMessage.text}</div> : null}
               </div>
             </div>
           </div>
@@ -1195,15 +1601,13 @@ export default function Page() {
   const canSync = currentUser.role !== "viewer";
   const userDisplayName = currentUser.full_name ?? currentUser.username;
   const userInitials = getInitials(userDisplayName);
-  const visibleSuppliers = metrics?.suppliers.slice(0, 5) ?? [];
-  const dashboardStats = metrics
-    ? [
-        { label: t.invoices, value: metrics.total_invoices.toString() },
-        { label: t.openExposure, value: formatCurrency(locale, metrics.open_exposure) },
-        { label: t.coverageAverage, value: formatPercent(locale, metrics.average_coverage) },
-        { label: t.highRisk, value: metrics.high_risk_count.toString() },
-      ]
-    : [];
+  const visibleFactories = factorySummaries.slice(0, 6);
+  const dashboardStats = [
+    { label: t.invoices, value: filteredInvoices.length.toString() },
+    { label: t.openExposure, value: formatCurrency(locale, filteredOpenExposure) },
+    { label: t.coverageAverage, value: formatPercent(locale, filteredCoverageAverage) },
+    { label: t.highRisk, value: filteredHighRiskCount.toString() },
+  ];
 
   return (
     <main className="shell appStage">
@@ -1227,7 +1631,7 @@ export default function Page() {
                 key={item.key}
                 type="button"
                 className={`navButton ${activeTab === item.key ? "active" : ""}`}
-                onClick={() => setActiveTab(item.key)}
+                onClick={() => startTransition(() => setActiveTab(item.key))}
               >
                 <span className="navIcon" />
                 <span>{item.label}</span>
@@ -1294,22 +1698,32 @@ export default function Page() {
 
           <section className="sidebarCard">
             <div className="panelHead">
-              <h2 className="sectionTitle">{t.indexCompaniesNoEu}</h2>
-              <span className="panelBadge">{metrics?.suppliers.length ?? 0}</span>
+              <h2 className="sectionTitle">{extraCopy.factories}</h2>
+              <span className="panelBadge">{factorySummaries.length}</span>
             </div>
+            <p className="helperText sidebarHelperText">{extraCopy.factoryHint}</p>
             <div className="compactList">
-              {visibleSuppliers.length ? (
-                visibleSuppliers.map((supplier) => (
-                  <article className="compactSupplier" key={supplier.name}>
-                    <div className="compactSupplierHead">
-                      <strong>{supplier.name}</strong>
-                      <span>{supplier.country ?? t.unknownCountry}</span>
+              {visibleFactories.length ? (
+                visibleFactories.map((factory) => (
+                  <button
+                    key={factory.name}
+                    type="button"
+                    className={`factoryCard ${factoryFilter === factory.name ? "active" : ""}`}
+                    onClick={() => setFactoryFilter((current) => (current === factory.name ? ALL_FACTORIES_VALUE : factory.name))}
+                  >
+                    <div className="factoryLogo" aria-hidden="true">{getInitials(factory.name)}</div>
+                    <div className="factoryCardCopy">
+                      <div className="compactSupplierHead">
+                        <strong>{factory.name}</strong>
+                        <span>{factory.country ?? t.unknownCountry}</span>
+                      </div>
+                      <div className="supplierStats">
+                        <span>{t.invoiceCount(factory.invoiceCount)}</span>
+                        <span>{t.highRisk}: {factory.highRiskCount}</span>
+                        <span>{t.openShort}: {formatCurrency(locale, factory.remainingAmount)}</span>
+                      </div>
                     </div>
-                    <div className="supplierStats">
-                      <span>{t.highRisk}: {supplier.high_risk_count}</span>
-                      <span>{t.openShort}: {formatCurrency(locale, supplier.remaining_amount)}</span>
-                    </div>
-                  </article>
+                  </button>
                 ))
               ) : (
                 <p className="helperText">{t.supplierIndexEmpty}</p>
@@ -1333,40 +1747,51 @@ export default function Page() {
 
             <div className="topbarControls">
               <div className="topbarRow topbarRowPrimary">
-              <label className="searchShell">
-                <span className="searchLabel">{t.search}</span>
-                <input
-                  className="searchInput"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={t.searchPlaceholder}
-                />
-              </label>
-              {languageSwitcher}
-              {themeSwitcher}
+                <label className="searchShell">
+                  <span className="searchLabel">{t.search}</span>
+                  <input
+                    className="searchInput"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder={t.searchPlaceholder}
+                  />
+                </label>
+                <label className="filterShell">
+                  <span className="filterLabel">{extraCopy.factoryFilter}</span>
+                  <select className="filterSelect" value={factoryFilter} onChange={(event) => setFactoryFilter(event.target.value)}>
+                    <option value={ALL_FACTORIES_VALUE}>{extraCopy.allFactories}</option>
+                    {factorySummaries.map((factory) => (
+                      <option key={factory.name} value={factory.name}>
+                        {factory.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {languageSwitcher}
+                {themeSwitcher}
               </div>
               <div className="topbarRow topbarRowSecondary">
-              <button className="button secondary" onClick={() => void handleSync()} disabled={!canSync}>
-                {t.syncWarehub}
-              </button>
-              <button className="button secondary" onClick={() => void loadDashboard(selectedId)}>
-                {t.refresh}
-              </button>
-              <button className="button ghost" onClick={() => void handleLogout()}>
-                {t.logout}
-              </button>
-              <div className="userCard">
-                <div className="userAvatar">{userInitials}</div>
-                <div>
-                  <strong>{userDisplayName}</strong>
-                  <span>{translateRole(locale, currentUser.role)}</span>
+                <button className="button secondary" onClick={() => void handleSync()} disabled={!canSync}>
+                  {t.syncWarehub}
+                </button>
+                <button className="button secondary" onClick={() => void loadDashboard(selectedId)}>
+                  {t.refresh}
+                </button>
+                <button className="button ghost" onClick={() => void handleLogout()}>
+                  {t.logout}
+                </button>
+                <div className="userCard">
+                  <div className="userAvatar">{userInitials}</div>
+                  <div>
+                    <strong>{userDisplayName}</strong>
+                    <span>{translateRole(locale, currentUser.role)}</span>
+                  </div>
                 </div>
-              </div>
               </div>
             </div>
           </header>
 
-          {statusMessage ? <div className={`statusBar ${statusMessage.type}`}>{statusMessage.text}</div> : null}
+          {statusMessage ? <div key={`${statusMessage.type}-${statusMessage.text}`} className={`statusBar ${statusMessage.type}`}>{statusMessage.text}</div> : null}
 
           <section className="metricGrid topMetricGrid">
             {dashboardStats.map((item) => (
@@ -1387,7 +1812,7 @@ export default function Page() {
                 key={item.key}
                 type="button"
                 className={`appTab ${activeTab === item.key ? "active" : ""}`}
-                onClick={() => setActiveTab(item.key)}
+                onClick={() => startTransition(() => setActiveTab(item.key))}
               >
                 {item.label}
               </button>
@@ -1395,9 +1820,11 @@ export default function Page() {
           </div>
 
           <div className="workspaceShell">
-            <section className="contentMain">{renderWorkspace()}</section>
+            <section className="contentMain" key={`workspace-${selectedId ?? "empty"}-${activeTab}`}>
+              {renderWorkspace()}
+            </section>
 
-            <aside className="rightRail">
+            <aside className="rightRail" key={`rail-${selectedId ?? "empty"}`}>
               <section className="panel railPanel">
                 <div className="panelHead">
                   <h2 className="sectionTitle">{t.recentInvoices}</h2>

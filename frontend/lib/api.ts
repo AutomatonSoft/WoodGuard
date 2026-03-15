@@ -5,6 +5,7 @@ import type {
   InvoiceDetail,
   InvoiceListResponse,
   ReferenceOptions,
+  ReverseGeocodeResult,
   TokenResponse,
   UploadResponse,
   UserPublic,
@@ -47,6 +48,15 @@ export interface InvoiceMetadataPayload {
   seller_geolocation_label?: string | null;
   seller_latitude?: number | null;
   seller_longitude?: number | null;
+}
+
+export interface GeolocationAutofillPayload {
+  company_name?: string | null;
+  company_country?: string | null;
+  seller_name?: string | null;
+  seller_address?: string | null;
+  seller_geolocation_label?: string | null;
+  geolocation_source_text?: string | null;
 }
 
 
@@ -156,11 +166,31 @@ async function request<T>(path: string, init?: RequestInit, retry = true): Promi
   }
 
   if (!response.ok) {
-    const message = await response.text();
+    let message = "Request failed.";
+    const contentType = response.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = (await response.json()) as { detail?: unknown; message?: unknown };
+        if (typeof payload.detail === "string") {
+          message = payload.detail;
+        } else if (typeof payload.message === "string") {
+          message = payload.message;
+        } else if (payload.detail !== undefined) {
+          message = JSON.stringify(payload.detail);
+        }
+      } catch {
+        message = response.statusText || message;
+      }
+    } else {
+      const text = await response.text();
+      message = text || response.statusText || message;
+    }
+
     if (response.status === 401) {
       storeTokens(null, null);
     }
-    throw new ApiError(message || "Request failed.", response.status);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {
@@ -205,6 +235,15 @@ export async function getMetrics(): Promise<DashboardMetrics> {
 
 export async function getReferenceOptions(): Promise<ReferenceOptions> {
   return request<ReferenceOptions>("/reference/options");
+}
+
+
+export async function reverseGeocode(latitude: number, longitude: number): Promise<ReverseGeocodeResult> {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+  });
+  return request<ReverseGeocodeResult>(`/reference/reverse-geocode?${params.toString()}`);
 }
 
 
@@ -261,10 +300,10 @@ export async function updateAssessment(
 }
 
 
-export async function autofillGeolocation(invoiceId: number): Promise<InvoiceDetail> {
+export async function autofillGeolocation(invoiceId: number, payload?: GeolocationAutofillPayload): Promise<InvoiceDetail> {
   return request<InvoiceDetail>(`/invoices/${invoiceId}/geolocation/autofill`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload ?? {}),
   });
 }
 

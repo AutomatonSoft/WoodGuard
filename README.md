@@ -70,6 +70,25 @@ Local Postgres + MinIO containers:
 docker compose up -d
 ```
 
+Full Docker stack with API + Next frontend + Postgres + MinIO:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- Frontend: `http://127.0.0.1:3000`
+- API: `http://127.0.0.1:8000/api/v1`
+- MinIO API: `http://127.0.0.1:9000`
+- MinIO Console: `http://127.0.0.1:9001`
+
+Docker compose overrides the app config for container use:
+
+- API uses Postgres at `postgres:5432`
+- Upload storage switches to MinIO/S3
+- Next frontend is built with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`
+
 Example Postgres connection string:
 
 ```bash
@@ -125,6 +144,12 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
 ```
 
 The Next app now requires login, stores access + refresh tokens in local storage, auto-refreshes sessions, and shows invoice audit history.
+
+Production image build only:
+
+```bash
+docker compose build frontend api
+```
 
 ## Run the Streamlit console
 

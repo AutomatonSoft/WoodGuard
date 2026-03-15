@@ -138,6 +138,22 @@ class InvoiceMetadataUpdate(BaseModel):
     seller_longitude: float | None = None
 
 
+class GeolocationAutofillRequest(BaseModel):
+    company_name: str | None = None
+    company_country: str | None = None
+    seller_name: str | None = None
+    seller_address: str | None = None
+    seller_geolocation_label: str | None = None
+    geolocation_source_text: str | None = None
+
+
+class ReverseGeocodeResponse(BaseModel):
+    latitude: float
+    longitude: float
+    display_name: str
+    provider: str = "nominatim"
+
+
 class InvoiceCreate(InvoiceMetadataUpdate):
     invoice_number: str
     amount: float = 0.0

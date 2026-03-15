@@ -33,9 +33,45 @@ services:
       - /bin/sh
       - -c
       - |
-        /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin
+        until /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done
         /usr/bin/mc mb --ignore-existing local/woodguard
         exit 0
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: woodguard-api
+    depends_on:
+      - postgres
+      - minio-init
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://woodguard:woodguard@postgres:5432/woodguard
+      AUTO_CREATE_SCHEMA: "false"
+      STORAGE_BACKEND: s3
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_BUCKET_NAME: woodguard
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_REGION_NAME: us-east-1
+      S3_KEY_PREFIX: woodguard
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+    container_name: woodguard-frontend
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
 
 volumes:
   woodguard_postgres_data:

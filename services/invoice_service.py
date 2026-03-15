@@ -14,6 +14,7 @@ from models.invoice import (
     ComplianceChoice,
     DashboardMetrics,
     DocumentStatus,
+    GeolocationAutofillRequest,
     InvoiceCreate,
     InvoiceDetail,
     InvoiceListResponse,
@@ -136,6 +137,15 @@ def _build_geolocation_query(*parts: str | None) -> str | None:
     return ", ".join(normalized_parts) if normalized_parts else None
 
 
+def _meaningful_company_name(value: str | None) -> str | None:
+    trimmed = (value or "").strip()
+    if not trimmed:
+        return None
+    if trimmed.casefold() == settings.default_company_name.casefold():
+        return None
+    return trimmed
+
+
 def _autofill_geolocation(record: InvoiceRecord, *, force: bool = False) -> None:
     geocoder = GeocodingClient()
     assessment = _assessment_from_record(record)
@@ -145,6 +155,7 @@ def _autofill_geolocation(record: InvoiceRecord, *, force: bool = False) -> None
         record.seller_geolocation_label,
         record.seller_address,
         record.seller_name,
+        _meaningful_company_name(record.company_name),
         record.company_country_name or record.company_country,
     )
     seller_coordinates_missing = record.seller_latitude is None or record.seller_longitude is None
@@ -170,6 +181,7 @@ def _autofill_geolocation(record: InvoiceRecord, *, force: bool = False) -> None
                 record.seller_geolocation_label,
                 record.seller_address,
                 record.seller_name,
+                _meaningful_company_name(record.company_name),
                 record.company_country_name or record.company_country,
             )
             if assessment_query:
@@ -191,10 +203,62 @@ def autofill_invoice_geolocation(
     db: Session,
     invoice_id: int,
     *,
+    payload: GeolocationAutofillRequest | None = None,
     actor: UserRecord | None = None,
 ) -> InvoiceDetail:
     record = get_invoice_or_404(db, invoice_id)
+    if payload is not None:
+        changes = payload.model_dump(exclude_unset=True, mode="json")
+        if "company_country" in changes:
+            _apply_country(record, changes.pop("company_country"))
+
+        geolocation_source_text = changes.pop("geolocation_source_text", None)
+        for field, value in changes.items():
+            setattr(record, field, value)
+
+        if geolocation_source_text is not None:
+            assessment = _assessment_from_record(record)
+            assessment.geolocation_source_text = geolocation_source_text
+            record.assessment_payload = assessment.model_dump(mode="json")
+
+    assessment_before = _assessment_from_record(record)
+    has_existing_coordinates = (
+        record.seller_latitude is not None
+        and record.seller_longitude is not None
+    ) or (
+        assessment_before.geolocation_latitude is not None
+        and assessment_before.geolocation_longitude is not None
+    )
+    has_lookup_source = _build_geolocation_query(
+        assessment_before.geolocation_source_text,
+        record.seller_geolocation_label,
+        record.seller_address,
+        record.seller_name,
+        _meaningful_company_name(record.company_name),
+    )
+
+    if not has_existing_coordinates and not has_lookup_source:
+        raise HTTPException(
+            status_code=400,
+            detail="Fill geolocation label, seller address or seller name first.",
+        )
+
     _autofill_geolocation(record, force=True)
+    assessment_after = _assessment_from_record(record)
+    has_coordinates_after = (
+        record.seller_latitude is not None
+        and record.seller_longitude is not None
+    ) or (
+        assessment_after.geolocation_latitude is not None
+        and assessment_after.geolocation_longitude is not None
+    )
+
+    if not has_coordinates_after:
+        raise HTTPException(
+            status_code=422,
+            detail="Geolocation could not be determined from the current data.",
+        )
+
     _refresh_risk(record)
     db.add(record)
     db.commit()
