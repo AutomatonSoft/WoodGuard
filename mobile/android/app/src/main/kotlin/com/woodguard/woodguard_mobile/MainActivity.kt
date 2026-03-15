@@ -1,0 +1,5 @@
+package com.woodguard.woodguard_mobile
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
