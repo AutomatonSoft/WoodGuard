@@ -23,6 +23,12 @@ export function EvidenceEditor({
   const t = getMessages(locale);
   const inputId = useId();
   const uploadedSummary = `${t.currentFiles}: ${evidence.files.length}`;
+  const statusToneClass =
+    evidence.status === "verified"
+      ? "statusSelect statusVerified"
+      : evidence.status === "uploaded"
+        ? "statusSelect statusUploaded"
+        : "statusSelect statusMissing";
 
   return (
     <article className="evidenceCard">
@@ -30,7 +36,7 @@ export function EvidenceEditor({
       <div className="formRow">
         <label>{t.status}</label>
         <select
-          className="selectInput"
+          className={`selectInput ${statusToneClass}`}
           value={evidence.status}
           onChange={(event) => onStatusChange(event.target.value as Evidence["status"])}
         >

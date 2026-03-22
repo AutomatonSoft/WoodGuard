@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/app_session_controller.dart';
+import '../controllers/app_view_controller.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../widgets/app_widgets.dart';
@@ -23,6 +24,7 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen> {
   late final TextEditingController _apiController;
   String? _message;
+  bool _isError = false;
   bool _syncing = false;
   bool _refreshingProfile = false;
 
@@ -47,23 +49,35 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _saveApiUrl() async {
+    final copy = context.read<AppViewController>().copy;
     try {
       await context.read<AppSessionController>().setApiBaseUrl(
         _apiController.text,
       );
+      if (!mounted) {
+        return;
+      }
       setState(() {
-        _message =
-            'API base URL saved. If you changed backend host, sign in again if needed.';
+        _isError = false;
+        _message = copy.apiBaseUrlSaved;
       });
     } on ApiException catch (error) {
-      setState(() => _message = error.message);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isError = true;
+        _message = error.message;
+      });
     }
   }
 
   Future<void> _refreshProfile() async {
+    final copy = context.read<AppViewController>().copy;
     setState(() {
       _refreshingProfile = true;
       _message = null;
+      _isError = false;
     });
 
     try {
@@ -73,12 +87,15 @@ class _AccountScreenState extends State<AccountScreen> {
       if (!mounted) {
         return;
       }
-      setState(() => _message = 'Profile refreshed for ${user.username}.');
+      setState(() => _message = copy.profileRefreshed(user.username));
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      setState(() {
+        _isError = true;
+        _message = error.message;
+      });
     } finally {
       if (mounted) {
         setState(() => _refreshingProfile = false);
@@ -87,9 +104,11 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _syncWarehub() async {
+    final copy = context.read<AppViewController>().copy;
     setState(() {
       _syncing = true;
       _message = null;
+      _isError = false;
     });
 
     try {
@@ -99,14 +118,16 @@ class _AccountScreenState extends State<AccountScreen> {
       }
       widget.onDataChanged();
       setState(() {
-        _message =
-            'Warehub sync finished. ${result.imported} imported, ${result.updated} updated.';
+        _message = copy.warehubSyncFinished(result.imported, result.updated);
       });
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      setState(() {
+        _isError = true;
+        _message = error.message;
+      });
     } finally {
       if (mounted) {
         setState(() => _syncing = false);
@@ -121,33 +142,71 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<AppSessionController>();
+    final view = context.watch<AppViewController>();
+    final copy = view.copy;
     final user = session.currentUser;
 
     return Scaffold(
       body: WoodGuardSurface(
         child: ListView(
           children: [
-            const SectionHeader(
-              title: 'Mobile Operator Console',
-              subtitle:
-                  'Keep API connectivity, session state and sync actions in one place.',
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SectionHeader(
+                    eyebrow: copy.authEyebrow,
+                    title: copy.accountConsoleTitle,
+                    subtitle: copy.accountConsoleSubtitle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const GlassIconBubble(icon: Icons.admin_panel_settings_rounded),
+              ],
             ),
             const SizedBox(height: 18),
+            const AppLanguageSwitcher(),
+            const SizedBox(height: 12),
+            const AppThemeModeToggle(),
+            const SizedBox(height: 18),
             WoodCard(
-              tint: const Color(0xFFE3EDE6),
+              tint: const Color(0xFFDDE8FF),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    user?.fullName ?? user?.username ?? 'Unknown user',
-                    style: Theme.of(context).textTheme.titleLarge,
+                  Row(
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF2F67FF), Color(0xFF7AA3FF)],
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          user?.fullName ?? user?.username ?? copy.unknownUser,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
-                  Text('Role: ${translateRole(user?.role ?? 'viewer')}'),
+                  Text('${copy.role}: ${copy.translateRole(user?.role)}'),
                   const SizedBox(height: 6),
-                  Text('Email: ${user?.email ?? 'Unknown'}'),
+                  Text('${copy.email}: ${user?.email ?? copy.unknownEmail}'),
                   const SizedBox(height: 6),
-                  Text('Created: ${formatDateTime(user?.createdAt)}'),
+                  Text(
+                    '${copy.created}: ${formatDateTime(view.locale, user?.createdAt)}',
+                  ),
                 ],
               ),
             ),
@@ -159,9 +218,9 @@ class _AccountScreenState extends State<AccountScreen> {
                   TextField(
                     controller: _apiController,
                     keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'API Base URL',
-                      hintText: 'http://192.168.x.x:8000/api/v1',
+                    decoration: InputDecoration(
+                      labelText: copy.apiBaseUrl,
+                      hintText: copy.apiHint,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -169,13 +228,12 @@ class _AccountScreenState extends State<AccountScreen> {
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: _saveApiUrl,
-                      child: const Text('Save API URL'),
+                      child: Text(copy.saveApiUrl),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Native mobile requests bypass browser CORS, so this talks '
-                    'directly to the same FastAPI backend as the web app.',
+                    copy.apiConnectivityNote,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: WoodGuardColors.pine,
                     ),
@@ -193,8 +251,8 @@ class _AccountScreenState extends State<AccountScreen> {
                       onPressed: _refreshingProfile ? null : _refreshProfile,
                       child: Text(
                         _refreshingProfile
-                            ? 'Refreshing profile...'
-                            : 'Refresh Profile',
+                            ? copy.refreshingProfile
+                            : copy.refreshProfile,
                       ),
                     ),
                   ),
@@ -205,7 +263,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: ElevatedButton(
                         onPressed: _syncing ? null : _syncWarehub,
                         child: Text(
-                          _syncing ? 'Syncing Warehub...' : 'Sync Warehub',
+                          _syncing ? copy.syncingWarehub : copy.syncWarehub,
                         ),
                       ),
                     ),
@@ -214,22 +272,12 @@ class _AccountScreenState extends State<AccountScreen> {
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: _signOut,
-                      child: const Text('Sign Out'),
+                      child: Text(copy.signOut),
                     ),
                   ),
                   if (_message != null) ...[
                     const SizedBox(height: 14),
-                    Text(
-                      _message!,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color:
-                            _message!.toLowerCase().contains('failed') ||
-                                _message!.toLowerCase().contains('error')
-                            ? WoodGuardColors.danger
-                            : WoodGuardColors.ember,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    InlineStatusBanner(message: _message!, isError: _isError),
                   ],
                 ],
               ),

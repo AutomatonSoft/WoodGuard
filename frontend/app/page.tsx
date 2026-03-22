@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
   ApiError,
@@ -60,6 +60,7 @@ import type {
   InvoiceDetail,
   InvoiceSummary,
   ReferenceOptions,
+  SupplierSummary,
   UserPublic,
 } from "../lib/types";
 import { EvidenceEditor } from "./evidence-editor";
@@ -81,10 +82,12 @@ type EvidenceKey = (typeof EVIDENCE_SECTIONS)[number];
 type ThemeMode = "light" | "dark";
 type WorkspaceTab = "overview" | "evidence" | "analytics";
 type FieldTone = "positive" | "negative" | "warning" | "neutral";
+type WoodSpecNumberField = "slice_count" | "area_square_meters";
 
 type FactorySummaryView = {
   name: string;
   country: string | null;
+  email: string | null;
   invoiceCount: number;
   highRiskCount: number;
   remainingAmount: number;
@@ -107,7 +110,7 @@ const EXTRA_COPY: Record<Locale, ExtraCopy> = {
     factoryFilter: "Factory Filter",
     allFactories: "All factories",
     factories: "Factories",
-    factoryHint: "Derived from seller/company fields until a dedicated factories endpoint is available.",
+    factoryHint: "Orderhub factory directory.",
     mapPicker: "Map Geolocation Picker",
     mapPickerHint: "Click on the map to place the geolocation pin.",
     dangerLabel: "DANGER",
@@ -117,7 +120,7 @@ const EXTRA_COPY: Record<Locale, ExtraCopy> = {
     allFactories: "\u0412\u0441\u0435 \u0444\u0430\u0431\u0440\u0438\u043a\u0438",
     factories: "\u0424\u0430\u0431\u0440\u0438\u043a\u0438",
     factoryHint:
-      "\u041f\u043e\u043a\u0430 \u0447\u0442\u043e \u0441\u043f\u0438\u0441\u043e\u043a \u0441\u043e\u0431\u0440\u0430\u043d \u0438\u0437 seller/company, \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e\u0433\u043e endpoint \u0444\u0430\u0431\u0440\u0438\u043a.",
+      "\u0421\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a \u0444\u0430\u0431\u0440\u0438\u043a \u0438\u0437 Orderhub.",
     mapPicker: "\u0412\u044b\u0431\u043e\u0440 \u0433\u0435\u043e\u043b\u043e\u043a\u0430\u0446\u0438\u0438 \u043d\u0430 \u043a\u0430\u0440\u0442\u0435",
     mapPickerHint: "\u041a\u043b\u0438\u043a\u043d\u0438\u0442\u0435 \u043f\u043e \u043a\u0430\u0440\u0442\u0435, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0442\u043e\u0447\u043a\u0443.",
     dangerLabel: "DANGER",
@@ -126,19 +129,37 @@ const EXTRA_COPY: Record<Locale, ExtraCopy> = {
     factoryFilter: "Werksfilter",
     allFactories: "Alle Werke",
     factories: "Werke",
-    factoryHint: "Aus Seller-/Company-Feldern abgeleitet, bis ein eigener Factory-Endpunkt vorhanden ist.",
+    factoryHint: "Werkverzeichnis aus Orderhub.",
     mapPicker: "Kartenauswahl der Geolokation",
     mapPickerHint: "Klicke auf die Karte, um den Punkt zu setzen.",
     dangerLabel: "DANGER",
+  },
+  tr: {
+    factoryFilter: "Fabrika Filtresi",
+    allFactories: "Tüm fabrikalar",
+    factories: "Fabrikalar",
+    factoryHint: "Orderhub fabrika dizini.",
+    mapPicker: "Harita Konum Seçici",
+    mapPickerHint: "Konum iğnesini yerleştirmek için haritaya tıklayın.",
+    dangerLabel: "TEHLİKE",
   },
 };
 
 
 function parseNumber(value: string): number | null {
+  const normalized = value.trim().replaceAll(",", ".");
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseInteger(value: string): number | null {
   if (!value.trim()) {
     return null;
   }
-  const parsed = Number(value);
+  const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -184,11 +205,41 @@ function buildOpenStreetMapUrl(latitude: number, longitude: number): string {
 
 
 function getFactoryName(invoice: Pick<InvoiceSummary, "seller_name" | "company_name">, fallback: string): string {
-  return normalizeText(invoice.seller_name) ?? normalizeText(invoice.company_name) ?? fallback;
+  return normalizeText(invoice.company_name) ?? normalizeText(invoice.seller_name) ?? fallback;
 }
 
 
-function buildFactorySummaries(items: InvoiceSummary[], fallback: string): FactorySummaryView[] {
+function sortFactorySummaries(items: FactorySummaryView[]): FactorySummaryView[] {
+  return [...items].sort((left, right) => {
+    if (right.highRiskCount !== left.highRiskCount) {
+      return right.highRiskCount - left.highRiskCount;
+    }
+    if (right.invoiceCount !== left.invoiceCount) {
+      return right.invoiceCount - left.invoiceCount;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+
+function buildFactorySummaries(
+  items: InvoiceSummary[],
+  fallback: string,
+  supplierSummaries: SupplierSummary[] | undefined,
+): FactorySummaryView[] {
+  if (supplierSummaries?.length) {
+    return sortFactorySummaries(
+      supplierSummaries.map((supplier) => ({
+        name: normalizeText(supplier.name) ?? fallback,
+        country: supplier.country,
+        email: supplier.email,
+        invoiceCount: supplier.invoice_count,
+        highRiskCount: supplier.high_risk_count,
+        remainingAmount: supplier.remaining_amount,
+      })),
+    );
+  }
+
   const factories = new Map<string, FactorySummaryView>();
 
   for (const invoice of items) {
@@ -196,6 +247,7 @@ function buildFactorySummaries(items: InvoiceSummary[], fallback: string): Facto
     const current = factories.get(factoryName) ?? {
       name: factoryName,
       country: invoice.company_country_name ?? invoice.company_country ?? null,
+      email: null,
       invoiceCount: 0,
       highRiskCount: 0,
       remainingAmount: 0,
@@ -213,15 +265,7 @@ function buildFactorySummaries(items: InvoiceSummary[], fallback: string): Facto
     factories.set(factoryName, current);
   }
 
-  return Array.from(factories.values()).sort((left, right) => {
-    if (right.highRiskCount !== left.highRiskCount) {
-      return right.highRiskCount - left.highRiskCount;
-    }
-    if (right.invoiceCount !== left.invoiceCount) {
-      return right.invoiceCount - left.invoiceCount;
-    }
-    return left.name.localeCompare(right.name);
-  });
+  return sortFactorySummaries(Array.from(factories.values()));
 }
 
 
@@ -305,10 +349,15 @@ export default function Page() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [search, setSearch] = useState("");
   const [factoryFilter, setFactoryFilter] = useState(ALL_FACTORIES_VALUE);
+  const [isFactoryFilterOpen, setIsFactoryFilterOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
   const [statusMessage, setStatusMessage] = useState<{ type: "error" | "info"; text: string } | null>(null);
   const [isAutofillingGeolocation, setIsAutofillingGeolocation] = useState(false);
   const [isUsingCurrentLocation, setIsUsingCurrentLocation] = useState(false);
+  const [woodSpecInputs, setWoodSpecInputs] = useState({
+    slice_count: "",
+    area_square_meters: "",
+  });
   const [manualForm, setManualForm] = useState({
     invoice_number: "",
     company_name: "",
@@ -320,6 +369,7 @@ export default function Page() {
     password: "woodguard123",
   });
   const [isPending, startTransition] = useTransition();
+  const factoryFilterRef = useRef<HTMLDivElement | null>(null);
   const t = getMessages(locale);
   const extraCopy = EXTRA_COPY[locale];
 
@@ -351,6 +401,13 @@ export default function Page() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    setWoodSpecInputs({
+      slice_count: draft?.assessment.slice_count?.toString() ?? "",
+      area_square_meters: draft?.assessment.area_square_meters?.toString() ?? "",
+    });
+  }, [draft?.id, draft?.assessment.slice_count, draft?.assessment.area_square_meters]);
 
   function resetWorkspace() {
     setMetrics(null);
@@ -429,7 +486,10 @@ export default function Page() {
     });
   }, []);
 
-  const factorySummaries = buildFactorySummaries(invoices, t.unassignedSupplier);
+  const factorySummaries = useMemo(
+    () => buildFactorySummaries(invoices, t.unassignedSupplier, metrics?.suppliers),
+    [invoices, metrics?.suppliers, t.unassignedSupplier],
+  );
 
   useEffect(() => {
     if (factoryFilter === ALL_FACTORIES_VALUE) {
@@ -441,19 +501,48 @@ export default function Page() {
     }
   }, [factoryFilter, factorySummaries]);
 
-  const filteredInvoices = invoices.filter((invoice) => {
-    if (factoryFilter !== ALL_FACTORIES_VALUE && getFactoryName(invoice, t.unassignedSupplier) !== factoryFilter) {
-      return false;
+  useEffect(() => {
+    if (!isFactoryFilterOpen) {
+      return;
     }
 
-    if (!deferredSearch.trim()) {
-      return true;
-    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!factoryFilterRef.current?.contains(event.target as Node)) {
+        setIsFactoryFilterOpen(false);
+      }
+    };
 
-    const haystack = `${invoice.invoice_number} ${invoice.company_name ?? ""} ${invoice.seller_name ?? ""}`.toLowerCase();
-    return haystack.includes(deferredSearch.toLowerCase());
-  });
-  const filteredInvoiceIdsKey = filteredInvoices.map((invoice) => invoice.id).join(",");
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsFactoryFilterOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFactoryFilterOpen]);
+
+  const filteredInvoices = useMemo(() => {
+    const normalizedSearch = deferredSearch.trim().toLowerCase();
+
+    return invoices.filter((invoice) => {
+      if (factoryFilter !== ALL_FACTORIES_VALUE && getFactoryName(invoice, t.unassignedSupplier) !== factoryFilter) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const haystack = `${invoice.invoice_number} ${invoice.company_name ?? ""} ${invoice.seller_name ?? ""}`.toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [deferredSearch, factoryFilter, invoices, t.unassignedSupplier]);
+  const filteredInvoiceIdsKey = useMemo(() => filteredInvoices.map((invoice) => invoice.id).join(","), [filteredInvoices]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -480,6 +569,11 @@ export default function Page() {
 
   const setAssessmentValue = <K extends keyof AssessmentPayload>(field: K, value: AssessmentPayload[K]) => {
     setDraft((current) => (current ? { ...current, assessment: { ...current.assessment, [field]: value } } : current));
+  };
+
+  const setWoodSpecNumberValue = (field: WoodSpecNumberField, rawValue: string) => {
+    setWoodSpecInputs((current) => ({ ...current, [field]: rawValue }));
+    setAssessmentValue(field, field === "slice_count" ? parseInteger(rawValue) : parseNumber(rawValue));
   };
 
   const setEvidenceValue = <K extends keyof Evidence>(section: EvidenceKey, field: K, value: Evidence[K]) => {
@@ -866,60 +960,96 @@ export default function Page() {
     setStatusMessage({ type: "info", text: t.signedOut });
   }
 
-  const evidenceRecords = draft ? EVIDENCE_SECTIONS.map((section) => draft.assessment[section]) : [];
-  const pendingEvidenceCount = evidenceRecords.filter((item) => item.status === "missing" && item.files.length === 0).length;
-  const uploadedEvidenceCount = evidenceRecords.reduce((total, item) => total + item.files.length, 0);
-  const verifiedSectionsCount = evidenceRecords.filter((item) => item.status === "verified").length;
-  const recentInvoices = filteredInvoices.slice(0, 6);
+  const evidenceRecords = useMemo(
+    () => (draft ? EVIDENCE_SECTIONS.map((section) => draft.assessment[section]) : []),
+    [draft],
+  );
+  const pendingEvidenceCount = useMemo(
+    () => evidenceRecords.filter((item) => item.status === "missing" && item.files.length === 0).length,
+    [evidenceRecords],
+  );
+  const uploadedEvidenceCount = useMemo(
+    () => evidenceRecords.reduce((total, item) => total + item.files.length, 0),
+    [evidenceRecords],
+  );
+  const verifiedSectionsCount = useMemo(
+    () => evidenceRecords.filter((item) => item.status === "verified").length,
+    [evidenceRecords],
+  );
+  const recentInvoices = useMemo(() => filteredInvoices.slice(0, 6), [filteredInvoices]);
   const latestAuditEntry = auditLogs[0] ?? null;
-  const latestAuditDate = latestAuditEntry ? formatDate(locale, latestAuditEntry.created_at) : t.unset;
-  const latestAuditTime = latestAuditEntry ? formatTime(locale, latestAuditEntry.created_at) : null;
-  const filteredOpenExposure = filteredInvoices.reduce((total, invoice) => total + invoice.remaining_amount, 0);
-  const filteredCoverageAverage = filteredInvoices.length
-    ? filteredInvoices.reduce((total, invoice) => total + invoice.risk.coverage_percent, 0) / filteredInvoices.length
-    : 0;
-  const filteredHighRiskCount = filteredInvoices.filter((invoice) => invoice.risk.risk_level === "high").length;
-  const analyticsAlerts = draft
-    ? [
-        draft.assessment.child_labor_ok === "no"
-          ? {
-              title: t.childLabor,
-              text: translateBlocker(locale, "Child labor concern flagged."),
-            }
-          : null,
-        draft.assessment.human_rights_ok === "no"
-          ? {
-              title: t.humanRights,
-              text: translateBlocker(locale, "Human rights concern flagged."),
-            }
-          : null,
-        draft.assessment.personal_risk_level === "high"
-          ? {
-              title: t.personalRiskAssessment,
-              text: draft.assessment.risk_reason ?? translateBlocker(locale, "Reviewer marked this invoice as high risk."),
-            }
-          : null,
-      ].filter((item): item is { title: string; text: string } => Boolean(item))
-    : [];
-  const notificationItems = draft
-    ? [
-        {
-          tone: draft.risk.risk_level,
-          title: t.riskScore,
-          text: `${translateRiskLevel(locale, draft.risk.risk_level)} | ${Math.round(draft.risk.risk_score)}%`,
-        },
-        {
-          tone: pendingEvidenceCount > 0 ? "medium" : "low",
-          title: t.pendingEvidence,
-          text: pendingEvidenceCount > 0 ? String(pendingEvidenceCount) : formatPercent(locale, draft.risk.coverage_percent),
-        },
-        {
-          tone: "low" as const,
-          title: t.latestActivity,
-          text: latestAuditEntry ? formatDateTime(locale, latestAuditEntry.created_at) : t.noAuditActivity,
-        },
-      ]
-    : [];
+  const latestAuditDate = useMemo(
+    () => (latestAuditEntry ? formatDate(locale, latestAuditEntry.created_at) : t.unset),
+    [latestAuditEntry, locale, t.unset],
+  );
+  const latestAuditTime = useMemo(
+    () => (latestAuditEntry ? formatTime(locale, latestAuditEntry.created_at) : null),
+    [latestAuditEntry, locale],
+  );
+  const filteredOpenExposure = useMemo(
+    () => filteredInvoices.reduce((total, invoice) => total + invoice.remaining_amount, 0),
+    [filteredInvoices],
+  );
+  const filteredCoverageAverage = useMemo(
+    () =>
+      filteredInvoices.length
+        ? filteredInvoices.reduce((total, invoice) => total + invoice.risk.coverage_percent, 0) / filteredInvoices.length
+        : 0,
+    [filteredInvoices],
+  );
+  const filteredHighRiskCount = useMemo(
+    () => filteredInvoices.filter((invoice) => invoice.risk.risk_level === "high").length,
+    [filteredInvoices],
+  );
+  const analyticsAlerts = useMemo(
+    () =>
+      draft
+        ? [
+            draft.assessment.child_labor_ok === "no"
+              ? {
+                  title: t.childLabor,
+                  text: translateBlocker(locale, "Child labor concern flagged."),
+                }
+              : null,
+            draft.assessment.human_rights_ok === "no"
+              ? {
+                  title: t.humanRights,
+                  text: translateBlocker(locale, "Human rights concern flagged."),
+                }
+              : null,
+            draft.assessment.personal_risk_level === "high"
+              ? {
+                  title: t.personalRiskAssessment,
+                  text: draft.assessment.risk_reason ?? translateBlocker(locale, "Reviewer marked this invoice as high risk."),
+                }
+              : null,
+          ].filter((item): item is { title: string; text: string } => Boolean(item))
+        : [],
+    [draft, locale, t.childLabor, t.humanRights, t.personalRiskAssessment],
+  );
+  const notificationItems = useMemo(
+    () =>
+      draft
+        ? [
+            {
+              tone: draft.risk.risk_level,
+              title: t.riskScore,
+              text: `${translateRiskLevel(locale, draft.risk.risk_level)} | ${Math.round(draft.risk.risk_score)}%`,
+            },
+            {
+              tone: pendingEvidenceCount > 0 ? "medium" : "low",
+              title: t.pendingEvidence,
+              text: pendingEvidenceCount > 0 ? String(pendingEvidenceCount) : formatPercent(locale, draft.risk.coverage_percent),
+            },
+            {
+              tone: "low" as const,
+              title: t.latestActivity,
+              text: latestAuditEntry ? formatDateTime(locale, latestAuditEntry.created_at) : t.noAuditActivity,
+            },
+          ]
+        : [],
+    [draft, latestAuditEntry, locale, pendingEvidenceCount, t.latestActivity, t.noAuditActivity, t.pendingEvidence, t.riskScore],
+  );
   const canAutofillLocation = hasGeolocationAutofillInput(draft);
   const isLocationActionPending = isAutofillingGeolocation || isUsingCurrentLocation;
   const autofillLocationHint = [t.geolocationLabel, t.address, t.sellerName, t.companyName].join(" / ");
@@ -1240,6 +1370,28 @@ export default function Page() {
                   />
                 </div>
               </div>
+              <div className="gridTwo">
+                <div className="formRow">
+                  <label>{t.sliceCount}</label>
+                  <input
+                    className="textInput"
+                    type="text"
+                    inputMode="numeric"
+                    value={woodSpecInputs.slice_count}
+                    onChange={(event) => setWoodSpecNumberValue("slice_count", event.target.value)}
+                  />
+                </div>
+                <div className="formRow">
+                  <label>{t.areaSquareMeters}</label>
+                  <input
+                    className="textInput"
+                    type="text"
+                    inputMode="decimal"
+                    value={woodSpecInputs.area_square_meters}
+                    onChange={(event) => setWoodSpecNumberValue("area_square_meters", event.target.value)}
+                  />
+                </div>
+              </div>
               <div className="formRow">
                 <label>{t.woodSpecificationMemo}</label>
                 <textarea
@@ -1515,6 +1667,83 @@ export default function Page() {
     }
   }
 
+  const dashboardStats = useMemo(
+    () => [
+      { label: t.invoices, value: filteredInvoices.length.toString() },
+      { label: t.openExposure, value: formatCurrency(locale, filteredOpenExposure) },
+      { label: t.coverageAverage, value: formatPercent(locale, filteredCoverageAverage) },
+      { label: t.highRisk, value: filteredHighRiskCount.toString() },
+    ],
+    [filteredCoverageAverage, filteredHighRiskCount, filteredInvoices.length, filteredOpenExposure, locale, t.coverageAverage, t.highRisk, t.invoices, t.openExposure],
+  );
+  const formatFactoryMeta = (factory: FactorySummaryView) =>
+    [factory.country ?? t.unknownCountry, factory.email]
+      .filter((value): value is string => Boolean(value))
+      .join(" · ");
+  const selectedFactoryLabel = factoryFilter === ALL_FACTORIES_VALUE ? extraCopy.allFactories : factoryFilter;
+
+  const handleFactoryFilterChange = (value: string) => {
+    startTransition(() => setFactoryFilter(value));
+    setIsFactoryFilterOpen(false);
+  };
+  const factoryListContent = useMemo(
+    () =>
+      factorySummaries.length ? (
+        factorySummaries.map((factory) => (
+          <button
+            key={factory.name}
+            type="button"
+            className={`factoryCard ${factoryFilter === factory.name ? "active" : ""}`}
+            onClick={() =>
+              startTransition(() => setFactoryFilter((current) => (current === factory.name ? ALL_FACTORIES_VALUE : factory.name)))
+            }
+            title={factory.email ?? factory.name}
+          >
+            <div className="factoryCardMain">
+              <strong className="factoryCardName">{factory.name}</strong>
+              {factory.highRiskCount > 0 ? (
+                <span className="factoryRiskFlag">{t.highRisk}: {factory.highRiskCount}</span>
+              ) : null}
+              <span className="factoryMetaText">{formatFactoryMeta(factory)}</span>
+            </div>
+            <div className="factoryCardAside">
+              <strong>{factory.invoiceCount}</strong>
+              <span>{t.invoices}</span>
+              <small>{formatCurrency(locale, factory.remainingAmount)}</small>
+            </div>
+          </button>
+        ))
+      ) : (
+        <p className="helperText">{t.supplierIndexEmpty}</p>
+      ),
+    [factoryFilter, factorySummaries, locale, t.highRisk, t.invoices, t.supplierIndexEmpty, t.unknownCountry],
+  );
+  const factoryFilterOptions = useMemo(
+    () => [
+      <button
+        key={ALL_FACTORIES_VALUE}
+        type="button"
+        className={`factoryFilterOption ${factoryFilter === ALL_FACTORIES_VALUE ? "active" : ""}`}
+        onClick={() => handleFactoryFilterChange(ALL_FACTORIES_VALUE)}
+      >
+        <span>{extraCopy.allFactories}</span>
+        <small>{factorySummaries.length}</small>
+      </button>,
+      ...factorySummaries.map((factory) => (
+        <button
+          key={factory.name}
+          type="button"
+          className={`factoryFilterOption ${factoryFilter === factory.name ? "active" : ""}`}
+          onClick={() => handleFactoryFilterChange(factory.name)}
+        >
+          <span>{factory.name}</span>
+          <small>{t.invoiceCount(factory.invoiceCount)}</small>
+        </button>
+      )),
+    ],
+    [extraCopy.allFactories, factoryFilter, factorySummaries, t],
+  );
+
   if (!authChecked) {
     return (
       <main className="shell appStage">
@@ -1537,10 +1766,16 @@ export default function Page() {
               {languageSwitcher}
               {themeSwitcher}
             </div>
-            <p className="eyebrow">{t.indexEyebrow}</p>
-            <h1>Woodguard</h1>
-            <p className="showcaseLead">{t.indexTitle}</p>
-            <p>{t.indexDescription}</p>
+            <div className="loginShowcaseHero">
+              <div className="showcasePulse">
+                <span className="showcasePulseDot" aria-hidden="true" />
+                <span>{t.authEyebrow}</span>
+              </div>
+              <p className="eyebrow">{t.indexEyebrow}</p>
+              <h1>Woodguard</h1>
+              <p className="showcaseLead">{t.indexTitle}</p>
+              <p>{t.indexDescription}</p>
+            </div>
             <div className="loginShowcaseGrid">
               <article className="showcaseCard">
                 <span>{t.invoices}</span>
@@ -1555,18 +1790,55 @@ export default function Page() {
                 <strong>12</strong>
               </article>
             </div>
+            <article className="showcaseStoryCard">
+              <div className="panelHead">
+                <div>
+                  <p className="eyebrow">{t.authTitle}</p>
+                  <h2>{t.indexTitle}</h2>
+                </div>
+                <span className="panelBadge">{t.analyticsTab}</span>
+              </div>
+              <div className="loginFeatureList">
+                {[t.overviewTab, t.evidenceTab, t.analyticsTab].map((item) => (
+                  <div className="loginFeatureItem" key={item}>
+                    <span className="featureBullet" aria-hidden="true" />
+                    <strong>{item}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
           </div>
 
           <div className="loginCard panel">
             <div className="loginAside">
-              <div className="brandMark">WG</div>
-              <div>
-                <p className="eyebrow">{t.authEyebrow}</p>
-                <h2>{t.authTitle}</h2>
-                <p>{t.authDescription}</p>
+              <div className="loginAsideHeader">
+                <div className="brandMark">WG</div>
+                <div>
+                  <p className="eyebrow">{t.authEyebrow}</p>
+                  <h2>{t.authTitle}</h2>
+                  <p>{t.authDescription}</p>
+                </div>
+              </div>
+              <div className="loginAsideMetrics">
+                <article className="loginAsideMetric">
+                  <span>{t.syncWarehub}</span>
+                  <strong>{t.refresh}</strong>
+                </article>
+                <article className="loginAsideMetric">
+                  <span>{t.coverageAverage}</span>
+                  <strong>98%</strong>
+                </article>
               </div>
             </div>
             <div className="loginFormWrap">
+              <div className="loginFormHeader">
+                <p className="eyebrow">{t.signIn}</p>
+                <h3>{t.authTitle}</h3>
+                <p className="helperText">{t.authDescription}</p>
+              </div>
+              <div className="loginCredentialNote">
+                <span className="panelBadge">{t.defaultAdminNote}</span>
+              </div>
               <div className="stack">
                 <div className="formRow">
                   <label>{t.usernameOrEmail}</label>
@@ -1588,7 +1860,6 @@ export default function Page() {
                 <button className="button loginButton" onClick={() => void handleLogin()} disabled={isPending}>
                   {t.signIn}
                 </button>
-                <p className="helperText">{t.defaultAdminNote}</p>
                 {statusMessage ? <div key={`${statusMessage.type}-${statusMessage.text}`} className={`statusBar ${statusMessage.type}`}>{statusMessage.text}</div> : null}
               </div>
             </div>
@@ -1601,13 +1872,11 @@ export default function Page() {
   const canSync = currentUser.role !== "viewer";
   const userDisplayName = currentUser.full_name ?? currentUser.username;
   const userInitials = getInitials(userDisplayName);
-  const visibleFactories = factorySummaries.slice(0, 6);
-  const dashboardStats = [
-    { label: t.invoices, value: filteredInvoices.length.toString() },
-    { label: t.openExposure, value: formatCurrency(locale, filteredOpenExposure) },
-    { label: t.coverageAverage, value: formatPercent(locale, filteredCoverageAverage) },
-    { label: t.highRisk, value: filteredHighRiskCount.toString() },
-  ];
+  const _formatFactoryMetaLegacy = (factory: FactorySummaryView) =>
+    [factory.country ?? t.unknownCountry, factory.email]
+      .filter((value): value is string => Boolean(value))
+      .join(" · ");
+  const _selectedFactoryLabelLegacy = factoryFilter === ALL_FACTORIES_VALUE ? extraCopy.allFactories : factoryFilter;
 
   return (
     <main className="shell appStage">
@@ -1646,7 +1915,7 @@ export default function Page() {
             </div>
             <div className="stack">
               <div className="formRow">
-                <label>{t.invoiceNumber}</label>
+                <label className="sectionTitle">{t.invoiceNumber}</label>
                 <input
                   className="textInput"
                   value={manualForm.invoice_number}
@@ -1654,7 +1923,7 @@ export default function Page() {
                 />
               </div>
               <div className="formRow">
-                <label>{t.companyName}</label>
+                <label className="sectionTitle">{t.companyName}</label>
                 <input
                   className="textInput"
                   value={manualForm.company_name}
@@ -1663,7 +1932,7 @@ export default function Page() {
               </div>
               <div className="gridTwo">
                 <div className="formRow">
-                  <label>{t.country}</label>
+                  <label className="sectionTitle">{t.country}</label>
                   <select
                     className="selectInput"
                     value={manualForm.company_country}
@@ -1681,7 +1950,7 @@ export default function Page() {
                   </select>
                 </div>
                 <div className="formRow">
-                  <label>{t.amount}</label>
+                  <label className="sectionTitle">{t.amount}</label>
                   <input
                     className="textInput"
                     type="number"
@@ -1702,33 +1971,7 @@ export default function Page() {
               <span className="panelBadge">{factorySummaries.length}</span>
             </div>
             <p className="helperText sidebarHelperText">{extraCopy.factoryHint}</p>
-            <div className="compactList">
-              {visibleFactories.length ? (
-                visibleFactories.map((factory) => (
-                  <button
-                    key={factory.name}
-                    type="button"
-                    className={`factoryCard ${factoryFilter === factory.name ? "active" : ""}`}
-                    onClick={() => setFactoryFilter((current) => (current === factory.name ? ALL_FACTORIES_VALUE : factory.name))}
-                  >
-                    <div className="factoryLogo" aria-hidden="true">{getInitials(factory.name)}</div>
-                    <div className="factoryCardCopy">
-                      <div className="compactSupplierHead">
-                        <strong>{factory.name}</strong>
-                        <span>{factory.country ?? t.unknownCountry}</span>
-                      </div>
-                      <div className="supplierStats">
-                        <span>{t.invoiceCount(factory.invoiceCount)}</span>
-                        <span>{t.highRisk}: {factory.highRiskCount}</span>
-                        <span>{t.openShort}: {formatCurrency(locale, factory.remainingAmount)}</span>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <p className="helperText">{t.supplierIndexEmpty}</p>
-              )}
-            </div>
+            <div className="compactList factoryList">{factoryListContent}</div>
           </section>
 
           <div className="sidebarFooterMeta">
@@ -1742,7 +1985,7 @@ export default function Page() {
             <div className="topbarLeft">
               <p className="eyebrow">{t.indexEyebrow}</p>
               <h1>Woodguard</h1>
-              <p>{draft ? `${t.selectedInvoice}: ${draft.invoice_number}` : t.noInvoicesYet}</p>
+              <p className="topbarLead">{draft ? `${t.selectedInvoice}: ${draft.invoice_number}` : t.noInvoicesYet}</p>
             </div>
 
             <div className="topbarControls">
@@ -1756,17 +1999,26 @@ export default function Page() {
                     placeholder={t.searchPlaceholder}
                   />
                 </label>
-                <label className="filterShell">
+                <div className="filterShell factoryFilterShell" ref={factoryFilterRef}>
                   <span className="filterLabel">{extraCopy.factoryFilter}</span>
-                  <select className="filterSelect" value={factoryFilter} onChange={(event) => setFactoryFilter(event.target.value)}>
-                    <option value={ALL_FACTORIES_VALUE}>{extraCopy.allFactories}</option>
-                    {factorySummaries.map((factory) => (
-                      <option key={factory.name} value={factory.name}>
-                        {factory.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <div className={`factoryFilterDropdown ${isFactoryFilterOpen ? "open" : ""}`}>
+                    <button
+                      type="button"
+                      className="factoryFilterTrigger"
+                      aria-expanded={isFactoryFilterOpen}
+                      aria-haspopup="listbox"
+                      onClick={() => setIsFactoryFilterOpen((current) => !current)}
+                    >
+                      <span className="factoryFilterValue">{selectedFactoryLabel}</span>
+                      <span className="factoryFilterChevron" aria-hidden="true" />
+                    </button>
+                    {isFactoryFilterOpen ? (
+                      <div className="factoryFilterMenu" role="listbox" aria-label={extraCopy.factoryFilter}>
+                        {factoryFilterOptions}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
                 {languageSwitcher}
                 {themeSwitcher}
               </div>

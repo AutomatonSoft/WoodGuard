@@ -1,21 +1,32 @@
 import 'package:intl/intl.dart';
 
 import '../models/domain.dart';
+import 'app_copy.dart';
 
-final _currencyFormatter = NumberFormat.currency(
-  locale: 'en_US',
-  symbol: 'EUR ',
-  decimalDigits: 0,
-);
-final _dateFormatter = DateFormat('dd MMM yyyy');
-final _dateTimeFormatter = DateFormat('dd MMM yyyy, HH:mm');
-final _apiDateFormatter = DateFormat('yyyy-MM-dd');
+enum WorkspaceTab { overview, evidence, analytics }
+
+enum FieldTone { positive, negative, warning, neutral }
 
 class EvidenceSection {
-  const EvidenceSection(this.key, this.label);
+  const EvidenceSection(this.key);
 
   final String key;
-  final String label;
+}
+
+class FactorySummaryView {
+  const FactorySummaryView({
+    required this.name,
+    required this.country,
+    required this.invoiceCount,
+    required this.highRiskCount,
+    required this.remainingAmount,
+  });
+
+  final String name;
+  final String? country;
+  final int invoiceCount;
+  final int highRiskCount;
+  final double remainingAmount;
 }
 
 const statusOptions = <String>[
@@ -31,38 +42,69 @@ const complianceOptions = <String>['yes', 'no', 'unknown'];
 const personalRiskOptions = <String?>[null, 'low', 'medium', 'high'];
 
 const evidenceSections = <EvidenceSection>[
-  EvidenceSection('certificate', 'Certificate'),
-  EvidenceSection('location_pictures', 'Location Pictures'),
-  EvidenceSection('notice', 'Notice'),
-  EvidenceSection('transport_papers', 'Transport Papers'),
-  EvidenceSection('geolocation_screenshot', 'Geolocation Screenshot'),
-  EvidenceSection('others', 'Other Evidence'),
+  EvidenceSection('certificate'),
+  EvidenceSection('location_pictures'),
+  EvidenceSection('notice'),
+  EvidenceSection('transport_papers'),
+  EvidenceSection('geolocation_screenshot'),
+  EvidenceSection('others'),
 ];
 
-String formatCurrency(double value) => _currencyFormatter.format(value);
+String _intlLocale(AppLocale locale) => switch (locale) {
+  AppLocale.en => 'en_US',
+  AppLocale.ru => 'ru_RU',
+  AppLocale.de => 'de_DE',
+};
 
-String formatPercent(num? value) => '${(value ?? 0).round()}%';
-
-String formatDate(String? value) {
-  if (value == null || value.trim().isEmpty) {
-    return 'Unset';
-  }
-  final parsed = DateTime.tryParse(value);
-  if (parsed == null) {
-    return value;
-  }
-  return _dateFormatter.format(parsed);
+String formatCurrency(AppLocale locale, double value) {
+  return NumberFormat.currency(
+    locale: _intlLocale(locale),
+    symbol: 'EUR ',
+    decimalDigits: 0,
+  ).format(value);
 }
 
-String formatDateTime(String? value) {
+String formatPercent(AppLocale locale, num? value) {
+  final percent = value ?? 0;
+  final number = NumberFormat.decimalPattern(
+    _intlLocale(locale),
+  ).format(percent.round());
+  return '$number%';
+}
+
+String formatDate(AppLocale locale, String? value) {
   if (value == null || value.trim().isEmpty) {
-    return 'Unset';
+    return AppCopy(locale).unset;
   }
   final parsed = DateTime.tryParse(value);
   if (parsed == null) {
     return value;
   }
-  return _dateTimeFormatter.format(parsed.toLocal());
+  return DateFormat.yMMMd(_intlLocale(locale)).format(parsed.toLocal());
+}
+
+String formatTime(AppLocale locale, String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return AppCopy(locale).unset;
+  }
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) {
+    return value;
+  }
+  return DateFormat.Hm(_intlLocale(locale)).format(parsed.toLocal());
+}
+
+String formatDateTime(AppLocale locale, String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return AppCopy(locale).unset;
+  }
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) {
+    return value;
+  }
+  return DateFormat.yMMMd(
+    _intlLocale(locale),
+  ).add_Hm().format(parsed.toLocal());
 }
 
 String? normalizeText(String? value) {
@@ -78,6 +120,10 @@ String formatNullableDouble(double? value) {
   return isWhole ? value.toInt().toString() : value.toString();
 }
 
+String formatNullableInt(int? value) {
+  return value?.toString() ?? '';
+}
+
 double? parseNullableDouble(String value) {
   final normalized = value.trim().replaceAll(',', '.');
   if (normalized.isEmpty) {
@@ -86,78 +132,21 @@ double? parseNullableDouble(String value) {
   return double.tryParse(normalized);
 }
 
-String toApiDate(DateTime date) => _apiDateFormatter.format(date);
+int? parseNullableInt(String value) {
+  final normalized = value.trim();
+  if (normalized.isEmpty) {
+    return null;
+  }
+  return int.tryParse(normalized);
+}
+
+String toApiDate(DateTime date) => DateFormat('yyyy-MM-dd').format(date);
 
 DateTime? parseApiDate(String? value) {
   if (value == null || value.trim().isEmpty) {
     return null;
   }
   return DateTime.tryParse(value);
-}
-
-String translateRole(String role) {
-  switch (role) {
-    case 'admin':
-      return 'Admin';
-    case 'analyst':
-      return 'Analyst';
-    case 'reviewer':
-      return 'Reviewer';
-    default:
-      return 'Viewer';
-  }
-}
-
-String translateRiskLevel(String? level) {
-  switch (level) {
-    case 'low':
-      return 'Low';
-    case 'medium':
-      return 'Medium';
-    case 'high':
-      return 'High';
-    default:
-      return 'Unset';
-  }
-}
-
-String translateInvoiceStatus(String? status) {
-  switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'partial':
-      return 'Partial';
-    case 'paid':
-      return 'Paid';
-    case 'cancelled':
-      return 'Cancelled';
-    case 'draft':
-      return 'Draft';
-    default:
-      return 'Unknown';
-  }
-}
-
-String translateComplianceChoice(String? choice) {
-  switch (choice) {
-    case 'yes':
-      return 'Yes';
-    case 'no':
-      return 'No';
-    default:
-      return 'Unknown';
-  }
-}
-
-String translateDocumentStatus(String? status) {
-  switch (status) {
-    case 'verified':
-      return 'Verified';
-    case 'uploaded':
-      return 'Uploaded';
-    default:
-      return 'Missing';
-  }
 }
 
 bool canEditDossier(String? role) {
@@ -211,6 +200,7 @@ Map<String, Object?> buildAssessmentPayload(InvoiceDetail detail) {
 
 Map<String, Object?> buildAutofillPayload(InvoiceDetail detail) {
   final payload = <String, Object?>{};
+
   void add(String key, String? value) {
     final normalized = normalizeText(value);
     if (normalized != null) {
@@ -235,20 +225,33 @@ bool hasGeolocationAutofillInput(InvoiceDetail? detail) {
       normalizeText(detail.sellerGeolocationLabel) != null ||
       normalizeText(detail.sellerAddress) != null ||
       normalizeText(detail.sellerName) != null ||
-      normalizeText(detail.companyName) != null;
+      normalizeText(getMeaningfulCompanyName(detail)) != null;
+}
+
+String? getMeaningfulCompanyName(InvoiceDetail? detail) {
+  final companyName = normalizeText(detail?.companyName);
+  if (companyName == null) {
+    return null;
+  }
+  return companyName.toLowerCase() == 'unassigned supplier'
+      ? null
+      : companyName;
 }
 
 String buildCurrentLocationLabel(double latitude, double longitude) {
-  return 'Mobile geolocation ${latitude.toStringAsFixed(5)}, '
+  return 'Current location ${latitude.toStringAsFixed(5)}, '
       '${longitude.toStringAsFixed(5)}';
+}
+
+String buildMapSelectionLabel(double latitude, double longitude) {
+  return 'Map pin ${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
 }
 
 bool shouldReplaceDerivedLocationText(String? value) {
   final normalized = value?.trim() ?? '';
   return normalized.isEmpty ||
       normalized.startsWith('Map pin ') ||
-      normalized.startsWith('Current location ') ||
-      normalized.startsWith('Mobile geolocation ');
+      normalized.startsWith('Current location ');
 }
 
 String buildMapUrl(double latitude, double longitude) {
@@ -256,11 +259,148 @@ String buildMapUrl(double latitude, double longitude) {
       '#map=13/$latitude/$longitude';
 }
 
+String buildOpenStreetMapEmbedUrl(double latitude, double longitude) {
+  const delta = 0.03;
+  final left = longitude - delta;
+  final right = longitude + delta;
+  final top = latitude + delta;
+  final bottom = latitude - delta;
+  return 'https://www.openstreetmap.org/export/embed.html?bbox='
+      '$left%2C$bottom%2C$right%2C$top&layer=mapnik&marker=$latitude%2C$longitude';
+}
+
+String formatCoordinate(double? value) {
+  return value == null ? '--' : value.toStringAsFixed(6);
+}
+
 String absoluteFileUrl(String apiBaseUrl, String path) {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path;
   }
 
-  final base = Uri.parse(apiBaseUrl);
-  return base.replace(path: path).toString();
+  final apiUri = Uri.parse(apiBaseUrl);
+  final origin = Uri(
+    scheme: apiUri.scheme,
+    host: apiUri.host,
+    port: apiUri.hasPort ? apiUri.port : null,
+  );
+  return origin.resolve(path.startsWith('/') ? path : '/$path').toString();
+}
+
+String resolveFactoryName(InvoiceSummary invoice, String fallback) {
+  return normalizeText(invoice.sellerName) ??
+      normalizeText(invoice.companyName) ??
+      fallback;
+}
+
+List<FactorySummaryView> buildFactorySummaries(
+  List<InvoiceSummary> items,
+  String fallback,
+) {
+  final factories = <String, FactorySummaryView>{};
+
+  for (final invoice in items) {
+    final name = resolveFactoryName(invoice, fallback);
+    final current =
+        factories[name] ??
+        FactorySummaryView(
+          name: name,
+          country: invoice.companyCountryName ?? invoice.companyCountry,
+          invoiceCount: 0,
+          highRiskCount: 0,
+          remainingAmount: 0,
+        );
+
+    factories[name] = FactorySummaryView(
+      name: name,
+      country:
+          current.country ??
+          invoice.companyCountryName ??
+          invoice.companyCountry,
+      invoiceCount: current.invoiceCount + 1,
+      highRiskCount:
+          current.highRiskCount + (invoice.risk.riskLevel == 'high' ? 1 : 0),
+      remainingAmount: current.remainingAmount + invoice.remainingAmount,
+    );
+  }
+
+  final result = factories.values.toList();
+  result.sort((left, right) {
+    if (right.highRiskCount != left.highRiskCount) {
+      return right.highRiskCount.compareTo(left.highRiskCount);
+    }
+    if (right.invoiceCount != left.invoiceCount) {
+      return right.invoiceCount.compareTo(left.invoiceCount);
+    }
+    return left.name.compareTo(right.name);
+  });
+  return result;
+}
+
+FieldTone getComplianceTone(String? value) {
+  switch (value) {
+    case 'yes':
+      return FieldTone.positive;
+    case 'no':
+      return FieldTone.negative;
+    default:
+      return FieldTone.warning;
+  }
+}
+
+FieldTone getRiskTone(String? value) {
+  switch (value) {
+    case 'low':
+      return FieldTone.positive;
+    case 'high':
+      return FieldTone.negative;
+    case 'medium':
+      return FieldTone.warning;
+    default:
+      return FieldTone.neutral;
+  }
+}
+
+String translateRole(String? role, {AppLocale locale = AppLocale.en}) {
+  return AppCopy(locale).translateRole(role);
+}
+
+String translateRiskLevel(String? value, {AppLocale locale = AppLocale.en}) {
+  return AppCopy(locale).translateRiskLevel(value);
+}
+
+String translateInvoiceStatus(
+  String? value, {
+  AppLocale locale = AppLocale.en,
+}) {
+  return AppCopy(locale).translateInvoiceStatus(value);
+}
+
+String translateComplianceChoice(
+  String? value, {
+  AppLocale locale = AppLocale.en,
+}) {
+  return AppCopy(locale).translateComplianceChoice(value);
+}
+
+String translateDocumentStatus(
+  String? value, {
+  AppLocale locale = AppLocale.en,
+}) {
+  return AppCopy(locale).translateDocumentStatus(value);
+}
+
+String translateEvidenceSection(
+  String value, {
+  AppLocale locale = AppLocale.en,
+}) {
+  return AppCopy(locale).translateEvidenceSection(value);
+}
+
+String translateWoodSpecies(String value, {AppLocale locale = AppLocale.en}) {
+  return AppCopy(locale).translateWoodSpecies(value);
+}
+
+String translateMaterialType(String value, {AppLocale locale = AppLocale.en}) {
+  return AppCopy(locale).translateMaterialType(value);
 }

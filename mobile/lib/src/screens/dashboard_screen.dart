@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/app_session_controller.dart';
+import '../controllers/app_view_controller.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../models/domain.dart';
@@ -62,6 +63,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AppSessionController>().currentUser;
+    final view = context.watch<AppViewController>();
+    final copy = view.copy;
+    final metrics = _metrics;
 
     return Scaffold(
       body: WoodGuardSurface(
@@ -70,75 +74,145 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              SectionHeader(
-                title: 'Field Overview',
-                subtitle: user == null
-                    ? 'Workspace'
-                    : 'Signed in as ${user.username}',
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: SectionHeader(
+                      eyebrow: copy.indexEyebrow,
+                      title: copy.dashboardTitle,
+                      subtitle: copy.dashboardSubtitle(user?.username),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const GlassIconBubble(icon: Icons.auto_awesome_rounded),
+                ],
               ),
               const SizedBox(height: 18),
-              if (_loading && _metrics == null)
-                const BusyState(label: 'Loading dashboard metrics...')
-              else if (_metrics == null)
+              if (_loading && metrics == null)
+                BusyState(label: copy.dashboardLoading)
+              else if (metrics == null)
                 EmptyState(
-                  title: 'Dashboard unavailable',
-                  description:
-                      _message ??
-                      'Check API connectivity and sign in again if needed.',
+                  title: copy.dashboardUnavailable,
+                  description: _message ?? copy.dashboardFallback,
+                  icon: Icons.cloud_off_rounded,
                 )
               else ...[
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.25,
+                WoodCard(
+                  tint: Colors.white.withValues(alpha: 0.2),
+                  child: Row(
+                    children: [
+                      const GlassIconBubble(
+                        icon: Icons.shield_rounded,
+                        size: 56,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              copy.compliancePulseTitle,
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(color: Colors.white),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              copy.compliancePulseBody,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Colors.white.withValues(alpha: 0.82),
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ResponsiveMetricGrid(
+                  maxColumns: 2,
+                  minTileWidth: 160,
+                  mainAxisExtent: 136,
                   children: [
                     MetricCard(
-                      label: 'Invoices',
-                      value: _metrics!.totalInvoices.toString(),
+                      label: copy.invoices,
+                      value: metrics.totalInvoices.toString(),
+                      icon: Icons.receipt_long_rounded,
                     ),
                     MetricCard(
-                      label: 'Open Exposure',
-                      value: formatCurrency(_metrics!.openExposure),
+                      label: copy.openExposure,
+                      value: formatCurrency(view.locale, metrics.openExposure),
+                      icon: Icons.account_balance_wallet_rounded,
                       tone: MetricTone.warm,
                     ),
                     MetricCard(
-                      label: 'Coverage Avg',
-                      value: formatPercent(_metrics!.averageCoverage),
+                      label: copy.coverageAverage,
+                      value: formatPercent(
+                        view.locale,
+                        metrics.averageCoverage,
+                      ),
+                      icon: Icons.donut_large_rounded,
                     ),
                     MetricCard(
-                      label: 'High Risk',
-                      value: _metrics!.highRiskCount.toString(),
+                      label: copy.highRisk,
+                      value: metrics.highRiskCount.toString(),
+                      icon: Icons.warning_amber_rounded,
                       tone: MetricTone.warm,
                     ),
                   ],
                 ),
                 const SizedBox(height: 18),
                 WoodCard(
-                  tint: const Color(0xFFE5EFE8),
+                  tint: const Color(0xFFDDE8FF),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Operational Pulse',
-                        style: Theme.of(context).textTheme.titleLarge,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: WoodGuardColors.ember.withValues(
+                                alpha: 0.12,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.bolt_rounded,
+                              color: WoodGuardColors.ember,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              copy.operationalPulse,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Paid: ${_metrics!.paidInvoices} | '
-                        'Open: ${_metrics!.openInvoices}',
+                        copy.paidOpenLabel(
+                          metrics.paidInvoices,
+                          metrics.openInvoices,
+                        ),
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Non-EU suppliers: ${_metrics!.nonEuSuppliers}',
+                        copy.nonEuSuppliersLabel(metrics.nonEuSuppliers),
                         style: Theme.of(context).textTheme.bodyLarge,
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Last sync: ${formatDateTime(_metrics!.latestSyncAt)}',
+                        copy.lastSyncLabel(
+                          formatDateTime(view.locale, metrics.latestSyncAt),
+                        ),
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: WoodGuardColors.pine,
                         ),
@@ -147,61 +221,128 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                Text(
-                  'Supplier Pressure',
-                  style: Theme.of(context).textTheme.titleLarge,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      copy.suppliersTitle,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleLarge?.copyWith(color: Colors.white),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          copy.supplierCount(metrics.suppliers.length),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelLarge?.copyWith(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
-                if (_metrics!.suppliers.isEmpty)
-                  const EmptyState(
-                    title: 'No suppliers yet',
-                    description:
-                        'Sync Warehub or create invoices from the workspace first.',
+                if (metrics.suppliers.isEmpty)
+                  EmptyState(
+                    title: copy.noSuppliersYet,
+                    description: copy.noSuppliersHint,
+                    icon: Icons.factory_outlined,
                   )
                 else
-                  ..._metrics!.suppliers.take(10).map((supplier) {
+                  ...metrics.suppliers.take(10).map((supplier) {
                     final hasHighRisk = supplier.highRiskCount > 0;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: WoodCard(
-                        child: Row(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    supplier.name,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF2F67FF),
+                                        Color(0xFF7AA3FF),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(18),
                                   ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    supplier.country ?? 'Country not set',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: WoodGuardColors.pine),
+                                  child: const Icon(
+                                    Icons.apartment_rounded,
+                                    color: Colors.white,
                                   ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '${supplier.invoiceCount} invoices | '
-                                    '${formatCurrency(supplier.remainingAmount)} open',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: WoodGuardColors.pine),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        supplier.name,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleMedium,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        supplier.country ?? copy.countryNotSet,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: WoodGuardColors.pine,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        copy.supplierOpenSummary(
+                                          supplier.invoiceCount,
+                                          formatCurrency(
+                                            view.locale,
+                                            supplier.remainingAmount,
+                                          ),
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: WoodGuardColors.pine,
+                                            ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                            StatusPill(
-                              label: '${supplier.highRiskCount} high',
-                              tone: hasHighRisk
-                                  ? PillTone.high
-                                  : PillTone.success,
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: StatusPill(
+                                label: copy.supplierHighRiskCount(
+                                  supplier.highRiskCount,
+                                ),
+                                tone: hasHighRisk
+                                    ? PillTone.high
+                                    : PillTone.success,
+                                compact: true,
+                              ),
                             ),
                           ],
                         ),
