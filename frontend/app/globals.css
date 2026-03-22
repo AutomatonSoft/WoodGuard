@@ -207,6 +207,24 @@ button {
 
 .appStage {
   min-height: 100vh;
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+
+.appStage.localeTransitioning {
+  opacity: 0.9;
+  filter: saturate(0.96);
+}
+
+@supports (view-transition-name: woodguard-stage) {
+  .appStage {
+    view-transition-name: woodguard-stage;
+  }
+
+  ::view-transition-old(woodguard-stage),
+  ::view-transition-new(woodguard-stage) {
+    animation-duration: 220ms;
+    animation-timing-function: var(--ease-smooth);
+  }
 }
 
 .appSurface {
@@ -347,7 +365,7 @@ button {
 
 .localeSwitch,
 .themeSwitch {
-  display: inline-flex;
+  display: grid;
   gap: 6px;
   padding: 4px;
   border-radius: 999px;
@@ -356,6 +374,9 @@ button {
 .localeButton,
 .themeButton,
 .appTab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 999px;
   padding: 9px 12px;
@@ -416,28 +437,90 @@ button {
   overflow: hidden;
   isolation: isolate;
   background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.38), transparent 34%),
-    linear-gradient(145deg, rgba(255, 214, 153, 0.34), rgba(90, 51, 12, 0.32)),
-    rgba(255, 255, 255, 0.12);
+    radial-gradient(circle at 24% 20%, rgba(255, 255, 255, 0.28), transparent 28%),
+    linear-gradient(160deg, rgba(10, 21, 44, 0.56), rgba(86, 120, 198, 0.22)),
+    rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.24);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 16px 30px rgba(6, 12, 24, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 14px 28px rgba(6, 12, 24, 0.2);
 }
 
-.brandMark::before,
-.brandMark::after {
+.brandMark > span {
+  position: absolute;
+  display: block;
+}
+
+.brandMarkHalo {
+  inset: 7px;
+  border-radius: 18px;
+  background:
+    repeating-radial-gradient(circle at 50% 56%, rgba(255, 255, 255, 0.1) 0 1px, transparent 1px 5px),
+    radial-gradient(circle at 50% 24%, rgba(126, 167, 255, 0.22), transparent 42%);
+  opacity: 0.46;
+}
+
+.brandMarkShield {
+  left: 50%;
+  top: 8px;
+  width: 30px;
+  height: 38px;
+  transform: translateX(-50%);
+  clip-path: polygon(50% 0%, 86% 11%, 86% 46%, 50% 100%, 14% 46%, 14% 11%);
+  background: linear-gradient(180deg, rgba(215, 234, 255, 0.98), rgba(90, 131, 218, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    0 6px 14px rgba(8, 18, 36, 0.18);
+}
+
+.brandMarkShield::before {
   content: "";
   position: absolute;
+  inset: 3px 4px 5px;
+  border-radius: 12px 12px 14px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  opacity: 0.72;
+}
+
+.brandMarkCanopy {
+  left: 50%;
+  top: 15px;
+  width: 22px;
+  height: 13px;
+  transform: translateX(-50%);
+  border-radius: 999px 999px 12px 12px;
+  background: linear-gradient(180deg, #94dfaf, #338b63);
+  box-shadow:
+    -8px 4px 0 -3px #5fb57c,
+    8px 4px 0 -3px #5fb57c;
+}
+
+.brandMarkCanopy::before {
+  content: "";
+  position: absolute;
+  inset: 2px 4px 5px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  z-index: -1;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent);
 }
 
-.brandMark::before {
-  inset: 10px 8px 18px 18px;
+.brandMarkTrunk {
+  left: 50%;
+  top: 28px;
+  width: 5px;
+  height: 15px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ddb884, #8d5b33);
 }
 
-.brandMark::after {
-  inset: 18px 16px 8px 8px;
+.brandMarkTrunk::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 13px;
+  height: 6px;
+  transform: translateX(-50%);
+  border-bottom: 2px solid rgba(141, 91, 51, 0.9);
+  border-radius: 0 0 999px 999px;
 }
 
 .sidebarBrand strong,
@@ -641,6 +724,7 @@ input[type="file"],
 .loginShowcase,
 .loginAside,
 .loginFormWrap,
+.loginIntro,
 .showcaseCard,
 .compactAudit > div,
 .compactSupplier > div,
@@ -656,11 +740,29 @@ input[type="file"],
   line-height: 0.92;
 }
 
+.topbarLeft {
+  min-height: 110px;
+  grid-template-rows: auto minmax(2.7rem, auto) calc(2 * 1.6em);
+  align-content: start;
+}
+
 .topbarLead {
   margin: 0;
   max-width: 560px;
+  height: calc(2 * 1.6em);
   color: var(--muted);
   line-height: 1.6;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-wrap: pretty;
+}
+
+.topbarLeft h1 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbarControls {
@@ -668,6 +770,7 @@ input[type="file"],
   z-index: 2;
   display: grid;
   gap: 10px;
+  align-content: start;
 }
 
 .topbarRow {
@@ -679,11 +782,27 @@ input[type="file"],
 }
 
 .topbarRowPrimary {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 272px 188px 220px;
   align-items: stretch;
 }
 
+.topbarRowSecondary {
+  display: grid;
+  grid-template-columns: 188px 148px 148px 236px;
+  justify-content: end;
+  align-items: stretch;
+}
+
+.topbarRowPrimary > .localeSwitch,
+.topbarRowPrimary > .themeSwitch,
+.topbarRowPrimary > .factoryFilterShell {
+  flex: 0 0 auto;
+}
+
 .searchShell {
-  min-width: 260px;
+  min-width: 0;
+  width: 100%;
   flex: 1 1 360px;
   display: flex;
   align-items: center;
@@ -705,7 +824,9 @@ input[type="file"],
 .factoryFilterShell {
   position: relative;
   z-index: 5;
-  min-width: 250px;
+  width: 100%;
+  min-width: 272px;
+  flex-basis: 272px;
   gap: 6px;
   padding: 11px 16px;
   border-radius: 999px;
@@ -877,11 +998,15 @@ input[type="file"],
 }
 
 .statusBar {
+  display: flex;
+  align-items: center;
   padding: 12px 16px;
+  min-height: 50px;
   border-radius: 18px;
   border: 1px solid var(--line);
   font-family: var(--font-mono), monospace;
   font-size: 0.84rem;
+  line-height: 1.35;
   animation: status-enter 260ms var(--ease-smooth) both;
 }
 
@@ -1231,7 +1356,7 @@ input[type="file"],
 }
 
 .loginCard {
-  grid-template-columns: minmax(250px, 0.9fr) minmax(320px, 1.1fr);
+  grid-template-columns: 1fr;
   min-height: 680px;
   overflow: hidden;
 }
@@ -1376,15 +1501,24 @@ input[type="file"] {
   align-items: center;
   justify-content: center;
   min-height: 36px;
+  min-width: 82px;
   padding: 0 14px;
   border-radius: 14px;
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: #fff;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .uploadMeta {
+  display: inline-flex;
+  align-items: center;
   color: var(--muted);
-  font-size: 0.92rem;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
   text-align: right;
   white-space: nowrap;
 }
@@ -1418,6 +1552,9 @@ input[type="file"] {
 }
 
 .evidenceCard {
+  display: grid;
+  align-content: start;
+  gap: 14px;
   padding: 18px;
 }
 
@@ -1425,6 +1562,32 @@ input[type="file"] {
 .loginAside h2,
 .workspaceHeroCopy h2 {
   margin: 0;
+}
+
+.evidenceCard h3 {
+  font-size: 1.04rem;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+.evidenceCard .formRow {
+  gap: 6px;
+}
+
+.evidenceCard .formRow label {
+  line-height: 1;
+}
+
+.evidenceCard .selectInput,
+.evidenceCard .textArea {
+  line-height: 1.35;
+}
+
+.evidenceCard .statusSelect {
+  min-height: 42px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.2;
 }
 
 .fileList,
@@ -1777,10 +1940,16 @@ input[type="file"] {
 
 .loginSurface {
   display: grid;
-  grid-template-columns: 1.12fr 0.88fr;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
   min-height: calc(100vh - 48px);
+}
+
+.loginSurfaceSolo {
+  justify-content: center;
+  align-content: center;
+  grid-template-columns: minmax(0, 680px);
 }
 
 .loadingSurface {
@@ -1789,8 +1958,11 @@ input[type="file"] {
 }
 
 .loginShowcase {
+  display: grid;
+  align-content: start;
+  gap: 24px;
   min-height: 680px;
-  padding: 38px;
+  padding: 40px;
   color: white;
   background: var(--showcase-bg);
 }
@@ -1800,6 +1972,11 @@ input[type="file"] {
 .loginFormHeader {
   display: grid;
   gap: 10px;
+}
+
+.loginShowcaseHero {
+  gap: 12px;
+  max-width: 760px;
 }
 
 .loginShowcase > p,
@@ -1853,16 +2030,16 @@ input[type="file"] {
 
 .showcaseLead {
   margin: 0;
-  max-width: 720px;
-  font-size: 1.1rem;
-  line-height: 1.65;
+  max-width: 680px;
+  font-size: clamp(1.18rem, 1.45vw, 1.34rem);
+  line-height: 1.5;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .showcaseCard {
-  padding: 18px;
+  padding: 18px 20px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
@@ -1898,7 +2075,7 @@ input[type="file"] {
 .loginFeatureItem,
 .loginAsideMetric {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 14px 16px;
   border-radius: 18px;
@@ -1913,6 +2090,21 @@ input[type="file"] {
   color: white;
 }
 
+.loginFeatureItem > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.loginFeatureItem > div span {
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.35;
+}
+
+.loginFeatureSummary {
+  grid-template-columns: 1fr;
+}
+
 .featureBullet {
   width: 10px;
   height: 10px;
@@ -1925,7 +2117,10 @@ input[type="file"] {
 .loginTools {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
 }
 
 .loginAside {
@@ -1957,32 +2152,198 @@ input[type="file"] {
 }
 
 .loginFormWrap {
-  padding: 72px 36px 36px;
+  padding: 34px 40px 38px;
   align-content: start;
-  justify-items: start;
+  justify-items: stretch;
 }
 
 .loginFormWrap > * {
-  width: min(100%, 380px);
+  width: 100%;
 }
 
-.loginFormHeader h3 {
+.loginFormWrap > .loginFormShell {
+  width: 100%;
+}
+
+.loginFormHeader h2,
+.loginFormHeader h3,
+.loginFormHeader h1 {
   margin: 0;
   font-size: clamp(1.6rem, 2vw, 2rem);
+  line-height: 1.12;
 }
 
 .loginCredentialNote {
-  margin: 2px 0 18px;
+  height: auto;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
 }
 
 .loginCredentialNote .panelBadge {
+  width: 100%;
+  max-width: none;
   color: var(--accent-strong);
   background: var(--accent-soft);
   border-color: rgba(47, 103, 255, 0.14);
 }
 
+.loginCredentialBadge {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  min-height: 0;
+  max-height: none;
+  padding: 13px 15px;
+  border-radius: 18px;
+  white-space: normal;
+  line-height: 1.5;
+  text-wrap: pretty;
+  font-size: 0.74rem;
+}
+
 .loginButton {
   width: 100%;
+}
+
+.loginFormCard {
+  min-height: auto;
+}
+
+.loginFormShell {
+  width: 100%;
+  max-width: 100%;
+  gap: 18px;
+}
+
+.loginFormShell > * {
+  width: 100%;
+}
+
+.loginIntro {
+  gap: 16px;
+  min-height: 0;
+  grid-template-rows: none;
+  align-content: start;
+}
+
+.loginCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 0;
+}
+
+.loginFormHeader {
+  min-height: 0;
+  gap: 6px;
+  grid-template-rows: none;
+  align-content: start;
+}
+
+.loginCardSolo .loginFormHeader h1 {
+  font-size: clamp(2.4rem, 3vw, 2.9rem);
+}
+
+.loginCardLead {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.loginCardLeadPrimary {
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.loginCardLeadSecondary {
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.loginCardSolo {
+  min-height: auto;
+}
+
+.loginCardSolo .loginTools {
+  padding: 24px 28px 0;
+}
+
+.loginCardSolo .loginFormWrap {
+  padding-top: 18px;
+}
+
+.loginFormStack {
+  gap: 16px;
+}
+
+.loginButton {
+  min-height: 50px;
+  font-size: 1rem;
+}
+
+.topbarActionButton {
+  min-width: 0;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.topbarUserCard {
+  width: 236px;
+  min-width: 236px;
+}
+
+.localeSwitch {
+  width: 188px;
+  min-width: 188px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.themeSwitch {
+  width: 220px;
+  min-width: 220px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.localeButton {
+  min-width: 40px;
+  white-space: nowrap;
+}
+
+.themeButton {
+  min-width: 72px;
+  white-space: nowrap;
+}
+
+.loginSupportGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.loginSupportItem {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+}
+
+.loginSupportItem span {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.loginSupportItem strong {
+  font-size: 1rem;
+  line-height: 1.15;
 }
 
 .emptyPanel,
@@ -2062,12 +2423,29 @@ input[type="file"] {
     justify-content: flex-start;
   }
 
+  .topbarRowPrimary,
+  .topbarRowSecondary,
+  .loginTools {
+    display: flex;
+    grid-template-columns: none;
+  }
+
+  .topbarLeft,
+  .loginCardSolo,
+  .loginIntro {
+    min-height: auto;
+  }
+
   .loginShowcase,
   .loginCard {
     min-height: auto;
   }
 
   .loginAsideMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .loginSupportGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -2106,8 +2484,20 @@ input[type="file"] {
 
   .searchShell,
   .filterShell,
-  .userCard {
+  .userCard,
+  .factoryFilterShell,
+  .localeSwitch,
+  .themeSwitch,
+  .topbarActionButton,
+  .topbarUserCard {
     width: 100%;
+    min-width: 0;
+    flex-basis: auto;
+  }
+
+  .loginTools {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
   }
 
   .locationThumbGrid {

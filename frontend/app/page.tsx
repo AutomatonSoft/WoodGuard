@@ -368,8 +368,11 @@ export default function Page() {
     username: "admin",
     password: "woodguard123",
   });
+  const [isLocaleSwitching, setIsLocaleSwitching] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [, startLocaleTransition] = useTransition();
   const factoryFilterRef = useRef<HTMLDivElement | null>(null);
+  const localeTransitionTimerRef = useRef<number | null>(null);
   const t = getMessages(locale);
   const extraCopy = EXTRA_COPY[locale];
 
@@ -381,6 +384,15 @@ export default function Page() {
     storeLocale(locale);
     document.documentElement.lang = locale;
   }, [locale]);
+
+  useEffect(
+    () => () => {
+      if (typeof window !== "undefined" && localeTransitionTimerRef.current !== null) {
+        window.clearTimeout(localeTransitionTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1061,7 +1073,7 @@ export default function Page() {
           key={item}
           type="button"
           className={`localeButton ${locale === item ? "active" : ""}`}
-          onClick={() => setLocale(item)}
+          onClick={() => handleLocaleChange(item)}
           title={LOCALE_LABELS[item]}
         >
           {item.toUpperCase()}
@@ -1681,6 +1693,51 @@ export default function Page() {
       .filter((value): value is string => Boolean(value))
       .join(" · ");
   const selectedFactoryLabel = factoryFilter === ALL_FACTORIES_VALUE ? extraCopy.allFactories : factoryFilter;
+  const activeTabLabel = activeTab === "overview" ? t.overviewTab : activeTab === "evidence" ? t.evidenceTab : t.analyticsTab;
+  const renderBrandMark = () => (
+    <div className="brandMark" aria-hidden="true">
+      <span className="brandMarkHalo" />
+      <span className="brandMarkShield" />
+      <span className="brandMarkCanopy" />
+      <span className="brandMarkTrunk" />
+    </div>
+  );
+
+  const handleLocaleChange = (nextLocale: Locale) => {
+    if (nextLocale === locale) {
+      return;
+    }
+
+    setIsFactoryFilterOpen(false);
+    setIsLocaleSwitching(true);
+
+    const finishTransition = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      if (localeTransitionTimerRef.current !== null) {
+        window.clearTimeout(localeTransitionTimerRef.current);
+      }
+      localeTransitionTimerRef.current = window.setTimeout(() => {
+        setIsLocaleSwitching(false);
+      }, 240);
+    };
+
+    const transitionDocument = document as Document & {
+      startViewTransition?: (update: () => void) => { finished?: Promise<unknown> } | void;
+    };
+
+    if (transitionDocument.startViewTransition) {
+      const transition = transitionDocument.startViewTransition(() => {
+        startLocaleTransition(() => setLocale(nextLocale));
+      });
+      Promise.resolve(transition?.finished).finally(finishTransition);
+      return;
+    }
+
+    startLocaleTransition(() => setLocale(nextLocale));
+    finishTransition();
+  };
 
   const handleFactoryFilterChange = (value: string) => {
     startTransition(() => setFactoryFilter(value));
@@ -1749,7 +1806,7 @@ export default function Page() {
       <main className="shell appStage">
         <section className="loginSurface loadingSurface">
           <div className="panel loadingPanel">
-            <p className="eyebrow">{t.authEyebrow}</p>
+            <p className="eyebrow">{t.signIn}</p>
             <h1>{t.checkingSession}</h1>
           </div>
         </section>
@@ -1759,87 +1816,29 @@ export default function Page() {
 
   if (!currentUser) {
     return (
-      <main className="shell appStage">
-        <section className="loginSurface">
-          <div className="loginShowcase panel">
+      <main className={`shell appStage ${isLocaleSwitching ? "localeTransitioning" : ""}`}>
+        <section className="loginSurface loginSurfaceSolo">
+          <div className="loginCard panel loginFormCard loginCardSolo">
             <div className="loginTools">
               {languageSwitcher}
               {themeSwitcher}
             </div>
-            <div className="loginShowcaseHero">
-              <div className="showcasePulse">
-                <span className="showcasePulseDot" aria-hidden="true" />
-                <span>{t.authEyebrow}</span>
-              </div>
-              <p className="eyebrow">{t.indexEyebrow}</p>
-              <h1>Woodguard</h1>
-              <p className="showcaseLead">{t.indexTitle}</p>
-              <p>{t.indexDescription}</p>
-            </div>
-            <div className="loginShowcaseGrid">
-              <article className="showcaseCard">
-                <span>{t.invoices}</span>
-                <strong>270+</strong>
-              </article>
-              <article className="showcaseCard">
-                <span>{t.coverageAverage}</span>
-                <strong>98%</strong>
-              </article>
-              <article className="showcaseCard">
-                <span>{t.highRisk}</span>
-                <strong>12</strong>
-              </article>
-            </div>
-            <article className="showcaseStoryCard">
-              <div className="panelHead">
-                <div>
-                  <p className="eyebrow">{t.authTitle}</p>
-                  <h2>{t.indexTitle}</h2>
-                </div>
-                <span className="panelBadge">{t.analyticsTab}</span>
-              </div>
-              <div className="loginFeatureList">
-                {[t.overviewTab, t.evidenceTab, t.analyticsTab].map((item) => (
-                  <div className="loginFeatureItem" key={item}>
-                    <span className="featureBullet" aria-hidden="true" />
-                    <strong>{item}</strong>
+            <div className="loginFormWrap loginFormShell">
+              <div className="loginIntro">
+                <div className="loginCardHeader">
+                  {renderBrandMark()}
+                  <div className="loginFormHeader">
+                    <p className="eyebrow">{t.signIn}</p>
+                    <h1>Woodguard</h1>
                   </div>
-                ))}
-              </div>
-            </article>
-          </div>
-
-          <div className="loginCard panel">
-            <div className="loginAside">
-              <div className="loginAsideHeader">
-                <div className="brandMark">WG</div>
-                <div>
-                  <p className="eyebrow">{t.authEyebrow}</p>
-                  <h2>{t.authTitle}</h2>
-                  <p>{t.authDescription}</p>
+                </div>
+                <p className="helperText loginCardLead loginCardLeadPrimary">{t.authTitle}</p>
+                <p className="helperText loginCardLead loginCardLeadSecondary">{t.authDescription}</p>
+                <div className="loginCredentialNote">
+                  <span className="panelBadge hintBadge loginCredentialBadge">{t.defaultAdminNote}</span>
                 </div>
               </div>
-              <div className="loginAsideMetrics">
-                <article className="loginAsideMetric">
-                  <span>{t.syncWarehub}</span>
-                  <strong>{t.refresh}</strong>
-                </article>
-                <article className="loginAsideMetric">
-                  <span>{t.coverageAverage}</span>
-                  <strong>98%</strong>
-                </article>
-              </div>
-            </div>
-            <div className="loginFormWrap">
-              <div className="loginFormHeader">
-                <p className="eyebrow">{t.signIn}</p>
-                <h3>{t.authTitle}</h3>
-                <p className="helperText">{t.authDescription}</p>
-              </div>
-              <div className="loginCredentialNote">
-                <span className="panelBadge">{t.defaultAdminNote}</span>
-              </div>
-              <div className="stack">
+              <div className="stack loginFormStack">
                 <div className="formRow">
                   <label>{t.usernameOrEmail}</label>
                   <input
@@ -1879,14 +1878,14 @@ export default function Page() {
   const _selectedFactoryLabelLegacy = factoryFilter === ALL_FACTORIES_VALUE ? extraCopy.allFactories : factoryFilter;
 
   return (
-    <main className="shell appStage">
+    <main className={`shell appStage ${isLocaleSwitching ? "localeTransitioning" : ""}`}>
       <section className="appSurface">
         <aside className="chromeSidebar">
           <div className="sidebarBrand">
-            <div className="brandMark">WG</div>
+            {renderBrandMark()}
             <div>
               <strong>Woodguard</strong>
-              <span>{t.indexEyebrow}</span>
+              <span>{t.invoiceQueue}</span>
             </div>
           </div>
 
@@ -1983,8 +1982,8 @@ export default function Page() {
         <section className="surfaceMain">
           <header className="topbar">
             <div className="topbarLeft">
-              <p className="eyebrow">{t.indexEyebrow}</p>
-              <h1>Woodguard</h1>
+              <p className="eyebrow">{activeTabLabel}</p>
+              <h1>{t.invoiceQueue}</h1>
               <p className="topbarLead">{draft ? `${t.selectedInvoice}: ${draft.invoice_number}` : t.noInvoicesYet}</p>
             </div>
 
@@ -2023,16 +2022,16 @@ export default function Page() {
                 {themeSwitcher}
               </div>
               <div className="topbarRow topbarRowSecondary">
-                <button className="button secondary" onClick={() => void handleSync()} disabled={!canSync}>
+                <button className="button secondary topbarActionButton" onClick={() => void handleSync()} disabled={!canSync}>
                   {t.syncWarehub}
                 </button>
-                <button className="button secondary" onClick={() => void loadDashboard(selectedId)}>
+                <button className="button secondary topbarActionButton" onClick={() => void loadDashboard(selectedId)}>
                   {t.refresh}
                 </button>
-                <button className="button ghost" onClick={() => void handleLogout()}>
+                <button className="button ghost topbarActionButton" onClick={() => void handleLogout()}>
                   {t.logout}
                 </button>
-                <div className="userCard">
+                <div className="userCard topbarUserCard">
                   <div className="userAvatar">{userInitials}</div>
                   <div>
                     <strong>{userDisplayName}</strong>
