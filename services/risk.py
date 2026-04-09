@@ -44,7 +44,16 @@ CHECKS: list[tuple[str, str, int, CheckFn]] = [
         lambda a: bool(a.wood_species or a.material_types or _has_memo(a.wood_specification_memo)),
     ),
     ("country_of_origin", "Country of origin", 5, lambda a: _has_memo(a.country_of_origin)),
-    ("quantity", "Quantity", 10, lambda a: a.quantity is not None),
+    (
+        "quantity",
+        "Quantity",
+        10,
+        lambda a: (
+            a.quantity is not None
+            or a.slice_count is not None
+            or a.area_square_meters is not None
+        ),
+    ),
     ("delivery_date", "Delivery date", 2, lambda a: a.delivery_date is not None),
     ("child_labor", "Child labor response", 10, lambda a: _answered(a.child_labor_ok)),
     ("human_rights", "Human rights response", 10, lambda a: _answered(a.human_rights_ok)),

@@ -27,7 +27,11 @@ class Settings(BaseSettings):
     upload_dir: str = str(BASE_DIR / "storage" / "uploads")
     public_upload_prefix: str = "/uploads"
     auto_create_schema: bool = True
+<<<<<<< HEAD
     warehub_base_url: str = "https://orderhub.automatonsoft.de/api/factories/invoices"
+=======
+    warehub_base_url: str = "https://orderhub.automatonsoft.de/api/factories/invoices/"
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     warehub_account_id: int = 1
     warehub_timeout_seconds: float = 20.0
     geocoding_enabled: bool = True

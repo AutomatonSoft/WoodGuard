@@ -1,7 +1,7 @@
 import type { ComplianceChoice, DocumentStatus, RiskLevel, UserPublic } from "./types";
 
 
-export const SUPPORTED_LOCALES = ["en", "ru", "de"] as const;
+export const SUPPORTED_LOCALES = ["en", "ru", "de", "tr"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = "en";
@@ -12,12 +12,14 @@ const INTL_LOCALE: Record<Locale, string> = {
   en: "en-US",
   ru: "ru-RU",
   de: "de-DE",
+  tr: "tr-TR",
 };
 
 export const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
   ru: "Русский",
   de: "Deutsch",
+  tr: "Türkçe",
 };
 
 type UiMessages = {
@@ -118,6 +120,8 @@ type UiMessages = {
   deliveryDate: string;
   quantity: string;
   unit: string;
+  sliceCount: string;
+  areaSquareMeters: string;
   riskInputs: string;
   childLabor: string;
   humanRights: string;
@@ -171,9 +175,9 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     dark: "Dark",
     checkingSession: "Checking session...",
     authEyebrow: "Woodguard / Auth",
-    authTitle: "Sign in to manage invoice dossiers and risk reviews.",
-    authDescription: "Use the local bootstrap admin only for testing. Switch credentials before real use.",
-    defaultAdminNote: "Default local bootstrap admin: admin / woodguard123.",
+    authTitle: "Manage invoice dossiers and risk reviews.",
+    authDescription: "Use the local admin only for testing. Update credentials before live work.",
+    defaultAdminNote: "Test login: admin / woodguard123.",
     usernameOrEmail: "Username or Email",
     password: "Password",
     signIn: "Sign In",
@@ -262,6 +266,8 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     deliveryDate: "Delivery Date",
     quantity: "Quantity",
     unit: "Unit",
+    sliceCount: "Slices",
+    areaSquareMeters: "Area (m²)",
     riskInputs: "Risk Inputs",
     childLabor: "Child Labor",
     humanRights: "Human Rights",
@@ -313,9 +319,9 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     dark: "Темная",
     checkingSession: "Проверка сессии...",
     authEyebrow: "Woodguard / Вход",
-    authTitle: "Войдите, чтобы управлять досье по инвойсам и оценкой рисков.",
-    authDescription: "Локального bootstrap admin используйте только для тестов. Для реальной работы смените доступы.",
-    defaultAdminNote: "Локальный bootstrap admin по умолчанию: admin / woodguard123.",
+    authTitle: "Управление досье по инвойсам и оценкой рисков.",
+    authDescription: "Локальный admin только для тестов. Перед рабочим запуском смените доступы.",
+    defaultAdminNote: "Тестовый вход: admin / woodguard123.",
     usernameOrEmail: "Логин или Email",
     password: "Пароль",
     signIn: "Войти",
@@ -404,6 +410,8 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     deliveryDate: "Дата поставки",
     quantity: "Количество",
     unit: "Единица",
+    sliceCount: "Слэбы",
+    areaSquareMeters: "Площадь (м²)",
     riskInputs: "Поля оценки риска",
     childLabor: "Детский труд",
     humanRights: "Права человека",
@@ -455,9 +463,9 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     dark: "Dunkel",
     checkingSession: "Sitzung wird geprüft...",
     authEyebrow: "Woodguard / Anmeldung",
-    authTitle: "Anmelden, um Rechnungsdossiers und Risikoprüfungen zu verwalten.",
-    authDescription: "Den lokalen Bootstrap-Admin nur für Tests verwenden. Vor echtem Einsatz Zugangsdaten ändern.",
-    defaultAdminNote: "Lokaler Bootstrap-Admin standardmäßig: admin / woodguard123.",
+    authTitle: "Rechnungsdossiers und Risikoprüfungen verwalten.",
+    authDescription: "Den lokalen Admin nur für Tests nutzen. Vor Live-Betrieb Zugangsdaten ändern.",
+    defaultAdminNote: "Testzugang: admin / woodguard123.",
     usernameOrEmail: "Benutzername oder E-Mail",
     password: "Passwort",
     signIn: "Anmelden",
@@ -546,6 +554,8 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     deliveryDate: "Lieferdatum",
     quantity: "Menge",
     unit: "Einheit",
+    sliceCount: "Platten",
+    areaSquareMeters: "Fläche (m²)",
     riskInputs: "Risikoeingaben",
     childLabor: "Kinderarbeit",
     humanRights: "Menschenrechte",
@@ -590,6 +600,150 @@ const UI_MESSAGES: Record<Locale, UiMessages> = {
     invoiceCount: (count) => `${count} Rechnung(en)`,
     supplierRiskOpen: (count, exposure) => `Hohes Risiko: ${count} | Offen: ${exposure}`,
   },
+  tr: {
+    language: "Dil",
+    theme: "Tema",
+    light: "Açık",
+    dark: "Koyu",
+    checkingSession: "Oturum kontrol ediliyor...",
+    authEyebrow: "Woodguard / Giriş",
+    authTitle: "Fatura dosyalarını ve risk incelemelerini yönetin.",
+    authDescription: "Yerel admin yalnızca test içindir. Canlı kullanım öncesi bilgileri değiştirin.",
+    defaultAdminNote: "Test girişi: admin / woodguard123.",
+    usernameOrEmail: "Kullanıcı adı veya E-posta",
+    password: "Şifre",
+    signIn: "Giriş Yap",
+    indexEyebrow: "Woodguard / İndeks",
+    indexTitle: "Warehub faturalarını çekin, kereste kanıtlarını toplayın, riski puanlayın ve her fatura için ayrı bir dosya tutun.",
+    indexDescription: "Warehub fatura finans verilerini getirir. Woodguard tedarikçi bağlamını, yüklemeleri, konum kanıtını, ahşap spesifikasyonunu ve nihai insan değerlendirmesini saklar.",
+    syncWarehub: "Warehub Senkronize Et",
+    refresh: "Yenile",
+    logout: "Çıkış Yap",
+    invoices: "Faturalar",
+    openExposure: "Açık Tutar",
+    coverageAverage: "Ort. Kapsam",
+    highRisk: "Yüksek Risk",
+    nonEuSuppliers: "AB Dışı Tedarikçiler",
+    paid: "Ödendi",
+    createNewIndex: "Yeni Kayıt Oluştur",
+    invoiceNumber: "Fatura Numarası",
+    companyName: "Şirket Adı",
+    country: "Ülke",
+    amount: "Tutar",
+    addManualInvoice: "Manuel Fatura Ekle",
+    indexCompaniesNoEu: "AB Dışı Şirketler İndeksi",
+    supplierIndexEmpty: "Tedarikçi indeksi ilk senkronizasyondan veya manuel oluşturmadan sonra görünecek.",
+    unknownCountry: "Bilinmeyen ülke",
+    invoiceQueue: "Fatura Kuyruğu",
+    overviewTab: "Genel Bakış",
+    evidenceTab: "Kanıtlar",
+    analyticsTab: "Analitik",
+    recentInvoices: "Son Faturalar",
+    recentInvoicesEmpty: "Geçerli filtrede fatura yok.",
+    notifications: "Bildirimler",
+    riskScore: "Risk Skoru",
+    pendingEvidence: "Bekleyen Kanıt",
+    uploadedEvidence: "Yüklenen Kanıtlar",
+    verifiedSections: "Doğrulanan Bölümler",
+    geoSnapshot: "Konum Özeti",
+    mapPreview: "Harita Önizleme",
+    coordinates: "Koordinatlar",
+    autoDetectLocation: "Konumu Otomatik Algıla",
+    useCurrentLocation: "Mevcut Konumu Kullan",
+    useCurrentLocationDescription: "Tarayıcı konumunu kullanır, taslağa adres ve koordinatları doldurur, ardından kaydetmenizi bekler.",
+    currentLocationStatus: "Mevcut konum tespit ediliyor...",
+    currentLocationSavedDraft: "Mevcut konum taslağa yüklendi. Kontrol edip onaylamak için kaydedin.",
+    currentLocationCoordinatesOnly: "Mevcut koordinatlar taslağa yüklendi. Adres çözümlenemedi, kaydetmeden önce kontrol edin.",
+    currentLocationUnavailable: "Tarayıcı konumu burada kullanılamıyor.",
+    currentLocationPermissionDenied: "Konum izni reddedildi.",
+    openMap: "Haritayı Aç",
+    lastSync: "Son Senkronizasyon",
+    selectedInvoice: "Seçili Fatura",
+    latestActivity: "Son Hareket",
+    search: "Ara",
+    searchPlaceholder: "Fatura / şirket / satıcı",
+    unassignedSupplier: "Atanmamış tedarikçi",
+    orderHubInvoice: "Order Hub Faturası",
+    manualIndex: "Manuel Kayıt",
+    invoice: "Fatura",
+    paidShort: "Ödendi",
+    openShort: "Açık",
+    invoiceMetadata: "Fatura Bilgileri",
+    selectCountry: "Ülke seçin",
+    status: "Durum",
+    remainingAmount: "Kalan Tutar",
+    invoiceDate: "Fatura Tarihi",
+    dueDate: "Vade Tarihi",
+    productionDate: "Üretim Tarihi",
+    importDate: "İthalat Tarihi",
+    internalNotes: "İç Notlar",
+    sellerCard: "Satıcı Kartı",
+    sellerName: "Satıcı Adı",
+    address: "Adres",
+    phone: "Telefon",
+    email: "E-posta",
+    website: "Web sitesi",
+    contactPerson: "Yetkili Kişi",
+    geolocationLabel: "Konum Etiketi",
+    latitude: "Enlem",
+    longitude: "Boylam",
+    evidenceSections: "Kanıt Bölümleri",
+    memo: "Not",
+    upload: "Yükle",
+    woodSpecification: "Ahşap Spesifikasyonu",
+    woodSpecies: "Ahşap Türleri",
+    materialTypes: "Malzeme Türleri",
+    woodSpecificationMemo: "Ahşap Spesifikasyonu Notu",
+    countryOfOrigin: "Menşe Ülke",
+    deliveryDate: "Teslim Tarihi",
+    quantity: "Miktar",
+    unit: "Birim",
+    sliceCount: "Dilimler",
+    areaSquareMeters: "Alan (m²)",
+    riskInputs: "Risk Girdileri",
+    childLabor: "Çocuk İşçiliği",
+    humanRights: "İnsan Hakları",
+    geoLatitude: "Konum Enlem",
+    geoLongitude: "Konum Boylam",
+    geolocationSource: "Konum Kaynağı",
+    personalRiskAssessment: "Kişisel Risk Değerlendirmesi",
+    why: "Neden?",
+    coverage: "Kapsam",
+    penalties: "Ceza Puanları",
+    riskBlockers: "Risk Engelleri",
+    saveDossier: "Dosyayı Kaydet",
+    saveDossierDescription: "Kaydetme işlemi tedarikçi bilgilerini ve due diligence değerlendirmesini Woodguard'a geri yazar.",
+    saveInvoiceDossier: "Fatura Dosyasını Kaydet",
+    auditTrail: "Denetim Geçmişi",
+    actor: "İşlemi Yapan",
+    systemActor: "sistem",
+    noAuditActivity: "Bu fatura için henüz denetim kaydı yok.",
+    noSummaryProvided: "Özet girilmedi.",
+    noInvoicesYet: "Henüz fatura yok. Başlamak için Warehub'ı senkronize edin veya ilk manuel kaydı oluşturun.",
+    currentFiles: "Mevcut dosyalar",
+    unset: "Belirlenmedi",
+    roleSeparator: "|",
+    signedInAs: (username) => `${username} olarak giriş yapıldı.`,
+    signingIn: "Giriş yapılıyor...",
+    syncingWarehubStatus: "Warehub faturaları senkronize ediliyor...",
+    warehubSyncCompleted: "Warehub senkronizasyonu tamamlandı.",
+    warehubSyncFailed: "Warehub senkronizasyonu başarısız oldu.",
+    manualInvoiceNumberRequired: "Manuel fatura numarası zorunludur.",
+    manualInvoiceCreated: "Manuel fatura dosyası oluşturuldu.",
+    fileUploadFailed: "Dosya yükleme başarısız oldu.",
+    saveDossierStatus: "Woodguard dosyası kaydediliyor...",
+    dossierSaved: "Fatura dosyası kaydedildi.",
+    loginFailed: "Giriş başarısız oldu.",
+    signedOut: "Çıkış yapıldı.",
+    loadDashboardFailed: "Gösterge paneli yüklenemedi.",
+    loadInvoiceFailed: "Fatura yüklenemedi.",
+    createInvoiceFailed: "Manuel fatura oluşturulamadı.",
+    saveInvoiceFailed: "Fatura dosyası kaydedilemedi.",
+    uploadedFiles: (count, backend) => `${count} dosya ${backend} konumuna yüklendi.`,
+    invoicesInView: (count) => `Geçerli görünümde ${count} fatura dosyası var.`,
+    invoiceCount: (count) => `${count} fatura`,
+    supplierRiskOpen: (count, exposure) => `Yüksek risk: ${count} | Açık: ${exposure}`,
+  },
 };
 
 function titleize(value: string): string {
@@ -602,30 +756,36 @@ const RISK_LEVEL_LABELS: Record<Locale, Record<RiskLevel, string>> = {
   en: { low: "Low", medium: "Medium", high: "High" },
   ru: { low: "Низкий", medium: "Средний", high: "Высокий" },
   de: { low: "Niedrig", medium: "Mittel", high: "Hoch" },
+  tr: { low: "Düşük", medium: "Orta", high: "Yüksek" },
 };
 
 const DOCUMENT_STATUS_LABELS: Record<Locale, Record<DocumentStatus, string>> = {
   en: { missing: "Missing", uploaded: "Uploaded", verified: "Verified" },
   ru: { missing: "Нет", uploaded: "Загружено", verified: "Проверено" },
   de: { missing: "Fehlt", uploaded: "Hochgeladen", verified: "Verifiziert" },
+  tr: { missing: "Eksik", uploaded: "Yüklendi", verified: "Doğrulandı" },
 };
 
 const COMPLIANCE_LABELS: Record<Locale, Record<ComplianceChoice, string>> = {
   en: { yes: "Yes", no: "No", unknown: "Unknown" },
   ru: { yes: "Да", no: "Нет", unknown: "Неизвестно" },
   de: { yes: "Ja", no: "Nein", unknown: "Unbekannt" },
+  tr: { yes: "Evet", no: "Hayır", unknown: "Bilinmiyor" },
 };
 
-const ROLE_LABELS: Record<Locale, Record<UserPublic["role"], string>> = {
+const ROLE_LABELS: Record<string, Record<UserPublic["role"], string>> = {
   en: { admin: "Admin", analyst: "Analyst", reviewer: "Reviewer", viewer: "Viewer" },
   ru: { admin: "Админ", analyst: "Аналитик", reviewer: "Ревьюер", viewer: "Наблюдатель" },
   de: { admin: "Admin", analyst: "Analyst", reviewer: "Prüfer", viewer: "Betrachter" },
 };
 
+ROLE_LABELS.tr = { admin: "Yönetici", analyst: "Analist", reviewer: "İnceleyen", viewer: "Görüntüleyici" };
+
 const INVOICE_STATUS_LABELS: Record<Locale, Record<string, string>> = {
   en: { pending: "Pending", partial: "Partial", paid: "Paid", cancelled: "Cancelled", draft: "Draft", unknown: "Unknown" },
   ru: { pending: "В ожидании", partial: "Частично", paid: "Оплачен", cancelled: "Отменен", draft: "Черновик", unknown: "Неизвестно" },
   de: { pending: "Ausstehend", partial: "Teilweise", paid: "Bezahlt", cancelled: "Storniert", draft: "Entwurf", unknown: "Unbekannt" },
+  tr: { pending: "Beklemede", partial: "Kısmi", paid: "Ödendi", cancelled: "İptal Edildi", draft: "Taslak", unknown: "Bilinmiyor" },
 };
 
 const EVIDENCE_SECTION_LABELS: Record<Locale, Record<string, string>> = {
@@ -653,18 +813,28 @@ const EVIDENCE_SECTION_LABELS: Record<Locale, Record<string, string>> = {
     geolocation_screenshot: "Geolokations-Screenshot",
     others: "Weitere Nachweise",
   },
+  tr: {
+    certificate: "Sertifika",
+    location_pictures: "Konum Fotoğrafları",
+    notice: "Bildirim",
+    transport_papers: "Taşıma Belgeleri",
+    geolocation_screenshot: "Konum Ekran Görüntüsü",
+    others: "Diğer Kanıtlar",
+  },
 };
 
 const WOOD_SPECIES_LABELS: Record<Locale, Record<string, string>> = {
   en: { oak: "Oak", beech: "Beech", pine: "Pine", spruce: "Spruce", ash: "Ash", maple: "Maple", birch: "Birch", walnut: "Walnut", cherry: "Cherry", mahogany: "Mahogany", teak: "Teak" },
   ru: { oak: "Дуб", beech: "Бук", pine: "Сосна", spruce: "Ель", ash: "Ясень", maple: "Клен", birch: "Береза", walnut: "Орех", cherry: "Вишня", mahogany: "Махагони", teak: "Тик" },
   de: { oak: "Eiche", beech: "Buche", pine: "Kiefer", spruce: "Fichte", ash: "Esche", maple: "Ahorn", birch: "Birke", walnut: "Walnuss", cherry: "Kirsche", mahogany: "Mahagoni", teak: "Teak" },
+  tr: { oak: "Meşe", beech: "Kayın", pine: "Çam", spruce: "Ladin", ash: "Dişbudak", maple: "Akçaağaç", birch: "Huş", walnut: "Ceviz", cherry: "Kiraz", mahogany: "Maun", teak: "Tik" },
 };
 
 const MATERIAL_TYPE_LABELS: Record<Locale, Record<string, string>> = {
   en: { solid_wood: "Solid Wood", mdf: "MDF", hdf: "HDF", particle_board: "Particle Board", plywood: "Plywood", veneer: "Veneer", other: "Other" },
   ru: { solid_wood: "Массив дерева", mdf: "MDF", hdf: "HDF", particle_board: "ДСП", plywood: "Фанера", veneer: "Шпон", other: "Другое" },
   de: { solid_wood: "Massivholz", mdf: "MDF", hdf: "HDF", particle_board: "Spanplatte", plywood: "Sperrholz", veneer: "Furnier", other: "Andere" },
+  tr: { solid_wood: "Masif Ahşap", mdf: "MDF", hdf: "HDF", particle_board: "Yonga Levha", plywood: "Kontrplak", veneer: "Kaplama", other: "Diğer" },
 };
 
 const BREAKDOWN_LABELS: Record<Locale, Record<string, string>> = {
@@ -713,6 +883,28 @@ const BREAKDOWN_LABELS: Record<Locale, Record<string, string>> = {
     transport_papers_document: "Transportdokumente",
     transport_papers_memo: "Transportnotiz",
   },
+  tr: {
+    "invoice.geolocation.autofill": "Konum Otomatik Doldurma",
+    certificate_document: "Sertifika",
+    certificate_memo: "Sertifika notu",
+    location_pictures_document: "Konum fotoğrafları",
+    location_pictures_memo: "Konum notu",
+    notice_document: "Bildirim",
+    notice_memo: "Bildirim notu",
+    wood_specification: "Ahşap spesifikasyonu",
+    country_of_origin: "Menşe ülke",
+    quantity: "Miktar",
+    delivery_date: "Teslim tarihi",
+    child_labor: "Çocuk işçiliği yanıtı",
+    human_rights: "İnsan hakları yanıtı",
+    geolocation_screenshot: "Konum ekran görüntüsü",
+    geolocation_data: "Konum verisi",
+    personal_risk_level: "Kişisel risk değerlendirmesi",
+    risk_reason: "Risk gerekçesi",
+    others: "Diğer kanıtlar",
+    transport_papers_document: "Taşıma belgeleri",
+    transport_papers_memo: "Taşıma notu",
+  },
 };
 
 const AUDIT_ACTION_LABELS: Record<Locale, Record<string, string>> = {
@@ -744,12 +936,27 @@ const AUDIT_ACTION_LABELS: Record<Locale, Record<string, string>> = {
     "invoice.sync.warehub": "Warehub-Synchronisierung",
     "upload.create": "Datei hochgeladen",
   },
+  tr: {
+    "auth.login": "Giriş",
+    "auth.refresh": "Token yenileme",
+    "auth.logout": "Çıkış",
+    "user.create": "Kullanıcı oluşturuldu",
+    "user.update": "Kullanıcı güncellendi",
+    "user.bootstrap_admin": "Bootstrap admin oluşturuldu",
+    "invoice.create": "Fatura oluşturuldu",
+    "invoice.metadata.update": "Fatura bilgileri güncellendi",
+    "invoice.assessment.update": "Değerlendirme güncellendi",
+    "invoice.geolocation.autofill": "Konum otomatik dolduruldu",
+    "invoice.sync.warehub": "Warehub senkronizasyonu",
+    "upload.create": "Dosya yüklendi",
+  },
 };
 
 const STORAGE_BACKEND_LABELS: Record<Locale, Record<string, string>> = {
   en: { local: "local storage", s3: "S3 storage" },
   ru: { local: "локальное хранилище", s3: "S3-хранилище" },
   de: { local: "lokaler Speicher", s3: "S3-Speicher" },
+  tr: { local: "yerel depolama", s3: "S3 depolama" },
 };
 
 export function getMessages(locale: Locale): UiMessages {
@@ -775,6 +982,9 @@ export function detectPreferredLocale(): Locale {
   const language = window.navigator.language.toLowerCase();
   if (language.startsWith("ru")) {
     return "ru";
+  }
+  if (language.startsWith("tr")) {
+    return "tr";
   }
   if (language.startsWith("de")) {
     return "de";
@@ -870,13 +1080,17 @@ export function translateBlocker(locale: Locale, blocker: string): string {
   }
 
   const euCountryMatch = blocker.match(/^Supplier country (.+) is outside the EU\.$/);
-  if (euCountryMatch) {
+  if (euCountryMatch && locale !== "tr") {
     return locale === "ru"
       ? `Страна поставщика ${euCountryMatch[1]} находится вне ЕС.`
       : `Das Lieferland ${euCountryMatch[1]} liegt außerhalb der EU.`;
   }
 
-  const staticMap: Record<string, Record<Exclude<Locale, "en">, string>> = {
+  if (locale === "tr" && euCountryMatch) {
+    return `Tedarik\u00e7i \u00fclkesi ${euCountryMatch[1]} AB d\u0131\u015f\u0131nda bulunuyor.`;
+  }
+
+  const staticMap: Record<string, Partial<Record<Exclude<Locale, "en">, string>>> = {
     "Certificate is missing.": {
       ru: "Сертификат отсутствует.",
       de: "Das Zertifikat fehlt.",
@@ -911,11 +1125,47 @@ export function translateBlocker(locale: Locale, blocker: string): string {
     },
   };
 
+  staticMap["Certificate is missing."].tr = "Sertifika eksik.";
+  staticMap["Transport papers are missing."].tr = "Ta\u015f\u0131ma belgeleri eksik.";
+  staticMap["No geolocation proof attached."].tr = "Konum kan\u0131t\u0131 eklenmedi.";
+  staticMap["Child labor concern flagged."].tr = "\u00c7ocuk i\u015f\u00e7ili\u011fi riski i\u015faretlendi.";
+  staticMap["Human rights concern flagged."].tr = "\u0130nsan haklar\u0131 riski i\u015faretlendi.";
+  staticMap["Reviewer marked this invoice as high risk."].tr =
+    "Bu fatura inceleyen taraf\u0131ndan y\u00fcksek risk olarak i\u015faretlendi.";
+  staticMap["Supplier country is unknown."].tr = "Tedarik\u00e7i \u00fclkesi bilinmiyor.";
+  staticMap["Wood origin country is not filled."].tr =
+    "Ah\u015fab\u0131n men\u015fe \u00fclkesi doldurulmad\u0131.";
+
   return staticMap[blocker]?.[locale] ?? blocker;
 }
 
 export function translateAuditSummary(locale: Locale, summary: string | null): string | null {
   if (!summary || locale === "en") {
+    return summary;
+  }
+
+  if (locale === "tr") {
+    const patterns: Array<[RegExp, (...parts: string[]) => string]> = [
+      [/^User (.+) signed in\.$/, (name) => `Kullan\u0131c\u0131 ${name} oturum a\u00e7t\u0131.`],
+      [/^Refresh token rotated for (.+)\.$/, (name) => `${name} i\u00e7in refresh token yenilendi.`],
+      [/^Session signed out\.$/, () => "Oturum kapat\u0131ld\u0131."],
+      [/^User (.+) created\.$/, (name) => `Kullan\u0131c\u0131 ${name} olu\u015fturuldu.`],
+      [/^User (.+) updated\.$/, (name) => `Kullan\u0131c\u0131 ${name} g\u00fcncellendi.`],
+      [/^Bootstrap admin (.+) created\.$/, (name) => `Bootstrap admin ${name} olu\u015fturuldu.`],
+      [/^Manual invoice (.+) created\.$/, (number) => `Manuel fatura ${number} olu\u015fturuldu.`],
+      [/^Invoice (.+) metadata updated\.$/, (number) => `Fatura ${number} meta verileri g\u00fcncellendi.`],
+      [/^Invoice (.+) assessment updated\.$/, (number) => `Fatura ${number} de\u011ferlendirmesi g\u00fcncellendi.`],
+      [/^Warehub sync completed for account (.+)\.$/, (account) => `Warehub senkronizasyonu ${account} hesab\u0131 i\u00e7in tamamland\u0131.`],
+      [/^File (.+) uploaded\.$/, (file) => `Dosya ${file} y\u00fcklendi.`],
+    ];
+
+    for (const [pattern, formatter] of patterns) {
+      const match = summary.match(pattern);
+      if (match) {
+        return formatter(...match.slice(1));
+      }
+    }
+
     return summary;
   }
 

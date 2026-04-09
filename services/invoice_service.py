@@ -478,23 +478,54 @@ def sync_warehub_invoices(
         else:
             updated += 1
 
+        employee_display = (
+            (item.employee.full_name or item.employee.username)
+            if item.employee
+            else None
+        )
         record.invoice_number = item.invoice_number
         record.amount = item.balance
         record.total_paid = item.total_paid
         record.remaining_amount = item.remaining_amount
         record.status = item.status or "unknown"
+        record.company_name = item.factory_name or record.company_name or settings.default_company_name
+        if item.factory_country_code:
+            _apply_country(record, item.factory_country_code)
+        elif item.factory_country_name:
+            record.company_country_name = item.factory_country_name
         record.notes = item.notes or record.notes or ""
         record.due_date = item.due_date
+        if item.created_at and record.invoice_date is None:
+            record.invoice_date = item.created_at.date()
         record.warehub_created_at = item.created_at
         record.warehub_updated_at = item.updated_at
         record.synced_at = synced_at
+<<<<<<< HEAD
         record.raw_payload = item.raw_payload or item.model_dump(mode="json")
         _apply_warehub_supplier(record, item)
         if _meaningful_company_name(record.company_name) is None:
             record.company_name = record.seller_name or settings.default_company_name
+=======
+        record.seller_name = item.factory_name or record.seller_name
+        record.seller_address = item.factory_address or record.seller_address
+        record.seller_phone = item.factory_phone or record.seller_phone
+        record.seller_email = item.factory_email or record.seller_email
+        record.seller_geolocation_label = (
+            item.factory_address
+            or item.factory_name
+            or record.seller_geolocation_label
+        )
+        record.seller_contact_person = (
+            item.factory_contact_person
+            or employee_display
+            or record.seller_contact_person
+        )
+        record.raw_payload = item.model_dump(mode="json")
+        if not record.company_name:
+            record.company_name = settings.default_company_name
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
         if record.company_country:
             _apply_country(record, record.company_country)
-        _autofill_geolocation(record)
         _refresh_risk(record)
 
     db.commit()
@@ -528,7 +559,7 @@ def build_dashboard_metrics(db: Session) -> DashboardMetrics:
     coverage_total = 0.0
     latest_sync_at = None
 
-    for item in summaries:
+    for record, item in zip(records, summaries, strict=False):
         if item.risk.risk_level == RiskLevel.low:
             low_risk_count += 1
         elif item.risk.risk_level == RiskLevel.medium:
@@ -550,12 +581,15 @@ def build_dashboard_metrics(db: Session) -> DashboardMetrics:
             supplier = SupplierSummary(
                 name=supplier_name,
                 country=item.company_country_name or item.company_country,
+                email=record.seller_email,
                 invoice_count=0,
                 high_risk_count=0,
                 total_amount=0.0,
                 remaining_amount=0.0,
             )
             suppliers[supplier_name] = supplier
+        elif not supplier.email and record.seller_email:
+            supplier.email = record.seller_email
 
         supplier.invoice_count += 1
         supplier.total_amount += item.amount
@@ -594,7 +628,7 @@ def build_dashboard_metrics(db: Session) -> DashboardMetrics:
         open_exposure=open_exposure,
         average_coverage=average_coverage,
         latest_sync_at=latest_sync_at,
-        suppliers=supplier_list[:12],
+        suppliers=supplier_list,
     )
 
 

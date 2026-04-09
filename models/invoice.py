@@ -83,6 +83,8 @@ class AssessmentPayload(BaseModel):
     country_of_origin: str | None = None
     quantity: float | None = None
     quantity_unit: str | None = None
+    slice_count: int | None = None
+    area_square_meters: float | None = None
     delivery_date: date | None = None
     child_labor_ok: ComplianceChoice = ComplianceChoice.unknown
     human_rights_ok: ComplianceChoice = ComplianceChoice.unknown
@@ -160,25 +162,38 @@ class InvoiceCreate(InvoiceMetadataUpdate):
     status: InvoiceStatus = InvoiceStatus.pending
 
 
+<<<<<<< HEAD
 class WarehubCountryItem(BaseModel):
+=======
+class WarehubCountry(BaseModel):
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     id: int | None = None
     name: str | None = None
     code: str | None = None
 
 
+<<<<<<< HEAD
 class WarehubOrderItem(BaseModel):
+=======
+class WarehubOrder(BaseModel):
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     id: int | None = None
     title: str | None = None
     status: str | None = None
     status_display: str | None = None
 
 
+<<<<<<< HEAD
 class WarehubEmployeeItem(BaseModel):
+=======
+class WarehubEmployee(BaseModel):
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     id: int | None = None
     username: str | None = None
     full_name: str | None = None
 
 
+<<<<<<< HEAD
 class WarehubFactoryInvoicePayload(BaseModel):
     id: int
     invoice_number: str
@@ -211,6 +226,8 @@ class WarehubFactoriesPayload(BaseModel):
     factories: list[WarehubFactoryPayload]
 
 
+=======
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
 class WarehubInvoiceItem(BaseModel):
     id: int
     invoice_number: str
@@ -223,6 +240,12 @@ class WarehubInvoiceItem(BaseModel):
     updated_at: datetime | None = None
     due_date: date | None = None
     notes: str | None = None
+<<<<<<< HEAD
+=======
+    status_display: str | None = None
+    order: WarehubOrder | None = None
+    employee: WarehubEmployee | None = None
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     factory_id: int | None = None
     factory_name: str | None = None
     factory_email: str | None = None
@@ -231,6 +254,7 @@ class WarehubInvoiceItem(BaseModel):
     factory_address: str | None = None
     factory_country_code: str | None = None
     factory_country_name: str | None = None
+<<<<<<< HEAD
     order_id: int | None = None
     order_title: str | None = None
     order_status: str | None = None
@@ -238,6 +262,24 @@ class WarehubInvoiceItem(BaseModel):
     employee_username: str | None = None
     employee_full_name: str | None = None
     raw_payload: dict = Field(default_factory=dict)
+=======
+
+
+class WarehubFactoryInvoices(BaseModel):
+    id: int
+    name: str
+    email: str | None = None
+    contact_person: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    country: WarehubCountry | None = None
+    invoices_count: int = 0
+    invoices: list[WarehubInvoiceItem] = Field(default_factory=list)
+
+
+class WarehubFactoriesResponse(BaseModel):
+    factories: list[WarehubFactoryInvoices] = Field(default_factory=list)
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
 
 
 class WarehubSyncRequest(BaseModel):
@@ -256,6 +298,7 @@ class WarehubSyncResult(BaseModel):
 class SupplierSummary(BaseModel):
     name: str
     country: str | None = None
+    email: str | None = None
     invoice_count: int
     high_risk_count: int
     total_amount: float

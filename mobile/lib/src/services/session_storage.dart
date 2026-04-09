@@ -7,6 +7,8 @@ class SessionStorage {
   static const accessTokenKey = 'woodguard.mobile.access-token';
   static const refreshTokenKey = 'woodguard.mobile.refresh-token';
   static const apiBaseUrlKey = 'woodguard.mobile.api-base-url';
+  static const localeKey = 'woodguard.mobile.locale';
+  static const themeModeKey = 'woodguard.mobile.theme-mode';
 
   static String get defaultApiBaseUrl {
     if (Platform.isAndroid) {
@@ -59,5 +61,25 @@ class SessionStorage {
   Future<void> writeApiBaseUrl(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(apiBaseUrlKey, normalizeApiBaseUrl(value));
+  }
+
+  Future<String?> readLocale() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(localeKey);
+  }
+
+  Future<void> writeLocale(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(localeKey, value);
+  }
+
+  Future<String?> readThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(themeModeKey);
+  }
+
+  Future<void> writeThemeMode(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(themeModeKey, value);
   }
 }

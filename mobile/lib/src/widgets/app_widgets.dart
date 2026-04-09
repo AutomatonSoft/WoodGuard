@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../controllers/app_view_controller.dart';
+import '../core/app_copy.dart';
 import '../core/theme.dart';
 
 class WoodGuardSurface extends StatelessWidget {
@@ -14,9 +17,11 @@ class WoodGuardSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
+<<<<<<< HEAD
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [Color(0xFF6489D1), Color(0xFF36569B)],
@@ -38,6 +43,31 @@ class WoodGuardSurface extends StatelessWidget {
             Padding(padding: padding, child: child),
           ],
         ),
+=======
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF0C1221), Color(0xFF17243D), Color(0xFF213760)]
+              : const [Color(0xFF6489D1), Color(0xFF4B73C2), Color(0xFF36569B)],
+        ),
+      ),
+      child: Stack(
+        children: [
+          const Positioned(
+            top: -40,
+            left: -60,
+            child: _AmbientOrb(size: 180, color: Color(0x44FFFFFF)),
+          ),
+          const Positioned(
+            right: -70,
+            bottom: 90,
+            child: _AmbientOrb(size: 220, color: Color(0x337EA7FF)),
+          ),
+          SafeArea(
+            child: Padding(padding: padding, child: child),
+          ),
+        ],
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
       ),
     );
   }
@@ -59,14 +89,24 @@ class WoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
+<<<<<<< HEAD
         color: tint ?? WoodGuardColors.panel,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(color: Colors.white.withValues(alpha: 0.34)),
+=======
+        color: tint ?? Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
         boxShadow: const [
           BoxShadow(
             color: Color(0x24111F46),
             blurRadius: 32,
+<<<<<<< HEAD
             offset: Offset(0, 16),
+=======
+            offset: Offset(0, 18),
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
           ),
         ],
       ),
@@ -82,11 +122,13 @@ class SectionHeader extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.trailing,
+    this.eyebrow,
   });
 
   final String title;
   final String? subtitle;
   final Widget? trailing;
+  final String? eyebrow;
 
   @override
   Widget build(BuildContext context) {
@@ -97,14 +139,21 @@ class SectionHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                eyebrow ?? 'MOBILE WORKSPACE',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.78),
+                ),
+              ),
+              const SizedBox(height: 6),
               Text(title, style: Theme.of(context).textTheme.titleLarge),
               if (subtitle != null) ...[
                 const SizedBox(height: 6),
                 Text(
                   subtitle!,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: WoodGuardColors.pine),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.82),
+                  ),
                 ),
               ],
             ],
@@ -123,39 +172,58 @@ class StatusPill extends StatelessWidget {
     super.key,
     required this.label,
     this.tone = PillTone.neutral,
+    this.compact = false,
   });
 
   final String label;
   final PillTone tone;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final background = switch (tone) {
+<<<<<<< HEAD
       PillTone.high => const Color(0x24E26172),
       PillTone.medium => const Color(0x24F0A945),
       PillTone.low => const Color(0x241DB97B),
       PillTone.success => const Color(0x241DB97B),
       PillTone.neutral => WoodGuardColors.sand,
+=======
+      PillTone.high => WoodGuardColors.danger.withValues(alpha: 0.14),
+      PillTone.medium => WoodGuardColors.amber.withValues(alpha: 0.16),
+      PillTone.low => WoodGuardColors.success.withValues(alpha: 0.14),
+      PillTone.success => WoodGuardColors.success.withValues(alpha: 0.14),
+      PillTone.neutral => WoodGuardColors.sand.withValues(alpha: 0.8),
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     };
     final foreground = switch (tone) {
       PillTone.high => WoodGuardColors.danger,
-      PillTone.medium => const Color(0xFF946014),
+      PillTone.medium => const Color(0xFF9C6B15),
       PillTone.low => WoodGuardColors.success,
       PillTone.success => WoodGuardColors.success,
       PillTone.neutral => WoodGuardColors.forest,
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 6 : 8,
+      ),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: foreground.withValues(alpha: 0.16)),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w800,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 180),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: foreground,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -169,21 +237,30 @@ class MetricCard extends StatelessWidget {
     super.key,
     required this.label,
     required this.value,
+    this.icon,
     this.tone = MetricTone.defaultTone,
   });
 
   final String label;
   final String value;
+  final IconData? icon;
   final MetricTone tone;
 
   @override
   Widget build(BuildContext context) {
     final colors = switch (tone) {
       MetricTone.defaultTone => (
+<<<<<<< HEAD
         const Color(0xFF2F67FF),
         const Color(0xFF234FCA),
       ),
       MetricTone.warm => (const Color(0xFFF0A945), const Color(0xFFE17F35)),
+=======
+        const Color(0xFF172B52),
+        const Color(0xFF2F67FF),
+      ),
+      MetricTone.warm => (const Color(0xFF244CBB), const Color(0xFF7AA3FF)),
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
     };
 
     return Container(
@@ -206,18 +283,45 @@ class MetricCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelLarge?.copyWith(color: Colors.white70),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (icon != null)
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 18),
+                ),
+              if (icon != null) const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(color: Colors.white70),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
+          Expanded(
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
         ],
@@ -226,11 +330,60 @@ class MetricCard extends StatelessWidget {
   }
 }
 
+class ResponsiveMetricGrid extends StatelessWidget {
+  const ResponsiveMetricGrid({
+    super.key,
+    required this.children,
+    this.maxColumns = 2,
+    this.minTileWidth = 150,
+    this.mainAxisExtent = 130,
+    this.spacing = 12,
+  });
+
+  final List<Widget> children;
+  final int maxColumns;
+  final double minTileWidth;
+  final double mainAxisExtent;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final estimatedCount =
+            ((availableWidth + spacing) / (minTileWidth + spacing))
+                .floor()
+                .clamp(1, maxColumns);
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: children.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: estimatedCount,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
+            mainAxisExtent: mainAxisExtent,
+          ),
+          itemBuilder: (context, index) => children[index],
+        );
+      },
+    );
+  }
+}
+
 class EmptyState extends StatelessWidget {
-  const EmptyState({super.key, required this.title, required this.description});
+  const EmptyState({
+    super.key,
+    required this.title,
+    required this.description,
+    this.icon = Icons.inventory_2_outlined,
+  });
 
   final String title;
   final String description;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -240,8 +393,8 @@ class EmptyState extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            Icons.inventory_2_outlined,
-            color: WoodGuardColors.forest.withValues(alpha: 0.8),
+            icon,
+            color: WoodGuardColors.ember.withValues(alpha: 0.8),
             size: 28,
           ),
           const SizedBox(height: 14),
@@ -270,7 +423,18 @@ class BusyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(14),
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+          ),
           const SizedBox(height: 16),
           Text(
             label,
@@ -284,8 +448,195 @@ class BusyState extends StatelessWidget {
   }
 }
 
+<<<<<<< HEAD
 class _AmbientBlob extends StatelessWidget {
   const _AmbientBlob({required this.size, required this.color});
+=======
+class GlassIconBubble extends StatelessWidget {
+  const GlassIconBubble({super.key, required this.icon, this.size = 48});
+
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.34),
+        color: Colors.white.withValues(alpha: 0.16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      ),
+      child: Icon(icon, color: Colors.white, size: size * 0.42),
+    );
+  }
+}
+
+class MotionReveal extends StatefulWidget {
+  const MotionReveal({
+    super.key,
+    required this.child,
+    this.delay = Duration.zero,
+    this.duration = const Duration(milliseconds: 520),
+    this.beginOffset = const Offset(0, 0.08),
+    this.curve = Curves.easeOutCubic,
+  });
+
+  final Widget child;
+  final Duration delay;
+  final Duration duration;
+  final Offset beginOffset;
+  final Curve curve;
+
+  @override
+  State<MotionReveal> createState() => _MotionRevealState();
+}
+
+class _MotionRevealState extends State<MotionReveal>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    final curved = CurvedAnimation(parent: _controller, curve: widget.curve);
+    _fade = Tween<double>(begin: 0, end: 1).animate(curved);
+    _slide = Tween<Offset>(
+      begin: widget.beginOffset,
+      end: Offset.zero,
+    ).animate(curved);
+
+    if (widget.delay == Duration.zero) {
+      _controller.forward();
+    } else {
+      Future<void>.delayed(widget.delay, () {
+        if (mounted) {
+          _controller.forward();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
+}
+
+class AppLanguageSwitcher extends StatelessWidget {
+  const AppLanguageSwitcher({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppViewController>(
+      builder: (context, view, _) {
+        final copy = view.copy;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: supportedAppLocales.map((locale) {
+            final selected = locale == view.locale;
+            return ChoiceChip(
+              label: Text(locale.code.toUpperCase()),
+              tooltip: copy.localeLabel(locale),
+              selected: selected,
+              onSelected: (_) => view.setLocale(locale),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class AppThemeModeToggle extends StatelessWidget {
+  const AppThemeModeToggle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppViewController>(
+      builder: (context, view, _) {
+        final copy = view.copy;
+        final isDark = view.themeMode == ThemeMode.dark;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<ThemeMode>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment<ThemeMode>(
+                value: ThemeMode.light,
+                label: Text(copy.light),
+                icon: const Icon(Icons.light_mode_rounded),
+              ),
+              ButtonSegment<ThemeMode>(
+                value: ThemeMode.dark,
+                label: Text(copy.dark),
+                icon: const Icon(Icons.dark_mode_rounded),
+              ),
+            ],
+            selected: <ThemeMode>{isDark ? ThemeMode.dark : ThemeMode.light},
+            onSelectionChanged: (selection) {
+              view.setThemeMode(selection.first);
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class InlineStatusBanner extends StatelessWidget {
+  const InlineStatusBanner({
+    super.key,
+    required this.message,
+    this.isError = false,
+  });
+
+  final String message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = isError
+        ? WoodGuardColors.danger.withValues(alpha: 0.14)
+        : WoodGuardColors.amber.withValues(alpha: 0.16);
+    final foreground = isError ? WoodGuardColors.danger : WoodGuardColors.ember;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: foreground.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        message,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _AmbientOrb extends StatelessWidget {
+  const _AmbientOrb({required this.size, required this.color});
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
 
   final double size;
   final Color color;
@@ -296,7 +647,17 @@ class _AmbientBlob extends StatelessWidget {
       child: Container(
         width: size,
         height: size,
+<<<<<<< HEAD
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+=======
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          boxShadow: [
+            BoxShadow(color: color, blurRadius: 50, spreadRadius: 10),
+          ],
+        ),
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
       ),
     );
   }

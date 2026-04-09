@@ -99,6 +99,8 @@ class AssessmentPayload {
     this.countryOfOrigin,
     this.quantity,
     this.quantityUnit,
+    this.sliceCount,
+    this.areaSquareMeters,
     this.deliveryDate,
     this.childLaborOk = 'unknown',
     this.humanRightsOk = 'unknown',
@@ -129,6 +131,8 @@ class AssessmentPayload {
   String? countryOfOrigin;
   double? quantity;
   String? quantityUnit;
+  int? sliceCount;
+  double? areaSquareMeters;
   String? deliveryDate;
   String childLaborOk;
   String humanRightsOk;
@@ -155,6 +159,10 @@ class AssessmentPayload {
       countryOfOrigin: json['country_of_origin']?.toString(),
       quantity: _nullableDoubleOf(json['quantity']),
       quantityUnit: json['quantity_unit']?.toString(),
+      sliceCount: json['slice_count'] == null
+          ? null
+          : _intOf(json['slice_count']),
+      areaSquareMeters: _nullableDoubleOf(json['area_square_meters']),
       deliveryDate: json['delivery_date']?.toString(),
       childLaborOk: json['child_labor_ok']?.toString() ?? 'unknown',
       humanRightsOk: json['human_rights_ok']?.toString() ?? 'unknown',
@@ -198,6 +206,8 @@ class AssessmentPayload {
       'country_of_origin': countryOfOrigin,
       'quantity': quantity,
       'quantity_unit': quantityUnit,
+      'slice_count': sliceCount,
+      'area_square_meters': areaSquareMeters,
       'delivery_date': deliveryDate,
       'child_labor_ok': childLaborOk,
       'human_rights_ok': humanRightsOk,

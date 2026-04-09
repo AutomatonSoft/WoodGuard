@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/app_session_controller.dart';
+import '../controllers/app_view_controller.dart';
+import '../core/app_copy.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../models/domain.dart';
@@ -23,13 +25,26 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   InvoiceDetail? _draft;
   ReferenceOptions? _reference;
   AuditLogListResponse? _audit;
+  final Map<String, TextEditingController> _fieldControllers = {};
   bool _loading = true;
   bool _saving = false;
   bool _autofilling = false;
   bool _locating = false;
   String? _uploadingSection;
   String? _message;
+  bool _messageIsError = false;
   bool _changed = false;
+  WorkspaceTab _activeTab = WorkspaceTab.overview;
+  String _sliceCountInput = '';
+  String _areaSquareMetersInput = '';
+
+  AppViewController get _view => context.read<AppViewController>();
+  AppCopy get _copy => _view.copy;
+
+  bool get _canEdit {
+    final role = context.read<AppSessionController>().currentUser?.role;
+    return canEditDossier(role);
+  }
 
   @override
   void initState() {
@@ -37,22 +52,49 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     _load();
   }
 
-  bool get _canEdit {
-    final role = context.read<AppSessionController>().currentUser?.role;
-    return canEditDossier(role);
+  @override
+  void dispose() {
+    for (final controller in _fieldControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _syncAssessmentInputState(InvoiceDetail? draft) {
+    _sliceCountInput = formatNullableInt(draft?.assessment.sliceCount);
+    _areaSquareMetersInput = formatNullableDouble(
+      draft?.assessment.areaSquareMeters,
+    );
+  }
+
+  TextEditingController _controllerForField(String fieldKey, String value) {
+    final controller = _fieldControllers.putIfAbsent(
+      fieldKey,
+      () => TextEditingController(text: value),
+    );
+    if (controller.text != value) {
+      controller.value = TextEditingValue(
+        text: value,
+        selection: TextSelection.collapsed(offset: value.length),
+      );
+    }
+    return controller;
+  }
+
+  void _setMessage(String? value, {required bool isError}) {
+    setState(() {
+      _message = value;
+      _messageIsError = isError;
+    });
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _message = null;
-    });
+    _setMessage(null, isError: false);
+    setState(() => _loading = true);
 
     final controller = context.read<AppSessionController>();
     try {
-      final detailFuture = controller.getInvoice(widget.invoiceId);
-      final auditFuture = controller.getInvoiceAuditLogs(widget.invoiceId);
-      Future<ReferenceOptions?> referenceFuture() async {
+      Future<ReferenceOptions?> loadReferenceOptions() async {
         try {
           return await controller.getReferenceOptions();
         } catch (_) {
@@ -60,23 +102,27 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         }
       }
 
-      final detail = await detailFuture;
-      final audit = await auditFuture;
-      final reference = await referenceFuture();
+      final results = await Future.wait<dynamic>([
+        controller.getInvoice(widget.invoiceId),
+        controller.getInvoiceAuditLogs(widget.invoiceId),
+        loadReferenceOptions(),
+      ]);
 
       if (!mounted) {
         return;
       }
+
       setState(() {
-        _draft = detail.clone();
-        _audit = audit;
-        _reference = reference;
+        _draft = (results[0] as InvoiceDetail).clone();
+        _syncAssessmentInputState(_draft);
+        _audit = results[1] as AuditLogListResponse;
+        _reference = results[2] as ReferenceOptions?;
       });
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      _setMessage(error.message, isError: true);
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -107,6 +153,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     setState(() {
       _saving = true;
       _message = null;
+      _messageIsError = false;
     });
 
     try {
@@ -125,14 +172,16 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       _changed = true;
       setState(() {
         _draft = updated.clone();
-        _message = 'Invoice dossier saved.';
+        _syncAssessmentInputState(_draft);
+        _message = _copy.invoiceDossierSaved;
+        _messageIsError = false;
       });
       await _refreshAudit();
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      _setMessage(error.message, isError: true);
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -146,16 +195,14 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       return;
     }
     if (!hasGeolocationAutofillInput(draft)) {
-      setState(() {
-        _message =
-            'Fill geolocation source, seller address, label or seller name first.';
-      });
+      _setMessage(_copy.geolocationAutofillHint, isError: true);
       return;
     }
 
     setState(() {
       _autofilling = true;
       _message = null;
+      _messageIsError = false;
     });
 
     try {
@@ -168,14 +215,15 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       _changed = true;
       setState(() {
         _draft = updated.clone();
-        _message = 'Geolocation fields refreshed from backend lookup.';
+        _message = _copy.geolocationRefreshed;
+        _messageIsError = false;
       });
       await _refreshAudit();
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      _setMessage(error.message, isError: true);
     } finally {
       if (mounted) {
         setState(() => _autofilling = false);
@@ -193,6 +241,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     setState(() {
       _locating = true;
       _message = null;
+      _messageIsError = false;
     });
 
     try {
@@ -202,7 +251,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        throw ApiException('Location permission was denied.', 0);
+        throw ApiException(_copy.locationPermissionDenied, 0);
       }
 
       final position = await Geolocator.getCurrentPosition(
@@ -248,19 +297,20 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           _draft!.assessment.geolocationSourceText = derivedLabel;
         }
         _message = reverseLookupFailed
-            ? 'Current coordinates loaded into the draft. Review and save.'
-            : 'Current location loaded into the draft. Review and save.';
+            ? _copy.currentCoordinatesLoaded
+            : _copy.currentLocationLoaded;
+        _messageIsError = false;
       });
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      _setMessage(error.message, isError: true);
     } catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.toString());
+      _setMessage(error.toString(), isError: true);
     } finally {
       if (mounted) {
         setState(() => _locating = false);
@@ -283,6 +333,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     setState(() {
       _uploadingSection = section.key;
       _message = null;
+      _messageIsError = false;
     });
 
     try {
@@ -307,14 +358,18 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       _changed = true;
       setState(() {
         _draft = updated.clone();
-        _message = '${uploads.length} file(s) uploaded for ${section.label}.';
+        _message = _copy.evidenceUploaded(
+          uploads.length,
+          _copy.translateEvidenceSection(section.key),
+        );
+        _messageIsError = false;
       });
       await _refreshAudit();
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _message = error.message);
+      _setMessage(error.message, isError: true);
     } finally {
       if (mounted) {
         setState(() => _uploadingSection = null);
@@ -339,7 +394,24 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   }
 
   Future<void> _launchExternalUrl(String url) async {
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  (double, double)? _currentCoordinates(InvoiceDetail draft) {
+    if (draft.assessment.geolocationLatitude != null &&
+        draft.assessment.geolocationLongitude != null) {
+      return (
+        draft.assessment.geolocationLatitude!,
+        draft.assessment.geolocationLongitude!,
+      );
+    }
+    if (draft.sellerLatitude != null && draft.sellerLongitude != null) {
+      return (draft.sellerLatitude!, draft.sellerLongitude!);
+    }
+    return null;
   }
 
   Widget _buildInput({
@@ -351,40 +423,265 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     TextInputType? keyboardType,
     int maxLines = 1,
   }) {
-    return TextFormField(
-      key: ValueKey('$fieldKey-$value-$enabled'),
-      initialValue: value,
-      onChanged: onChanged,
-      enabled: enabled,
-      keyboardType: keyboardType,
-      maxLines: maxLines,
-      decoration: InputDecoration(labelText: label),
+    final controller = _controllerForField(fieldKey, value);
+    return _buildFieldShell(
+      label: label,
+      child: TextFormField(
+        key: ValueKey('$fieldKey-$enabled-$maxLines'),
+        controller: controller,
+        onChanged: onChanged,
+        enabled: enabled,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        minLines: maxLines > 1 ? maxLines : 1,
+        textAlignVertical: maxLines > 1
+            ? TextAlignVertical.top
+            : TextAlignVertical.center,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          color: Theme.of(context).colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(alignLabelWithHint: maxLines > 1),
+      ),
     );
   }
 
   Widget _buildDateField({
     required String label,
     required String? value,
+    required AppLocale locale,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: _canEdit ? onTap : null,
       borderRadius: BorderRadius.circular(20),
-      child: InputDecorator(
-        decoration: InputDecoration(labelText: label),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                formatDate(value),
-                style: Theme.of(context).textTheme.bodyLarge,
+      child: _buildFieldShell(
+        label: label,
+        child: InputDecorator(
+          decoration: const InputDecoration(),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  formatDate(locale, value),
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
               ),
-            ),
-            const Icon(Icons.calendar_month_rounded),
-          ],
+              const Icon(Icons.calendar_month_rounded),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildFieldShell({required String label, required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: WoodGuardColors.pine,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+
+  Widget _buildFieldRow({
+    required List<Widget> children,
+    double breakpoint = 560,
+    double spacing = 12,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < breakpoint) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var index = 0; index < children.length; index += 1) ...[
+                children[index],
+                if (index != children.length - 1) SizedBox(height: spacing),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var index = 0; index < children.length; index += 1) ...[
+              Expanded(child: children[index]),
+              if (index != children.length - 1) SizedBox(width: spacing),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDropdownField<T>({
+    required String label,
+    required T? value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?>? onChanged,
+    Key? fieldKey,
+    Color? fillColor,
+    Color? borderColor,
+    Color? foregroundColor,
+  }) {
+    final accentColor =
+        foregroundColor ?? Theme.of(context).colorScheme.onSurface;
+    return _buildFieldShell(
+      label: label,
+      child: DropdownButtonFormField<T>(
+        key: fieldKey,
+        initialValue: value,
+        isExpanded: true,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          color: accentColor,
+          fontWeight: FontWeight.w700,
+        ),
+        iconEnabledColor: accentColor,
+        decoration: InputDecoration(
+          filled: fillColor != null,
+          fillColor: fillColor,
+          enabledBorder: borderColor == null
+              ? null
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(22),
+                  borderSide: BorderSide(
+                    color: borderColor.withValues(alpha: 0.42),
+                  ),
+                ),
+          focusedBorder: borderColor == null
+              ? null
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(22),
+                  borderSide: BorderSide(color: borderColor, width: 1.6),
+                ),
+        ),
+        items: items,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  Widget _buildInsetPanel({
+    required Widget child,
+    EdgeInsets padding = const EdgeInsets.all(16),
+    Color? tint,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color:
+            tint ??
+            (isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : const Color(0xFFF7FAFF)),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : WoodGuardColors.line.withValues(alpha: 0.12),
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildSummaryFact({
+    required String label,
+    required String value,
+    required IconData icon,
+    Color? valueColor,
+    bool emphasize = false,
+  }) {
+    final resolvedValueColor =
+        valueColor ?? Theme.of(context).colorScheme.onSurface;
+
+    return _buildInsetPanel(
+      tint: Theme.of(context).brightness == Brightness.dark
+          ? Colors.white.withValues(alpha: 0.04)
+          : Colors.white.withValues(alpha: 0.74),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: WoodGuardColors.pine),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(color: WoodGuardColors.pine),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: resolvedValueColor,
+              fontWeight: emphasize ? FontWeight.w800 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  PillTone _invoiceStatusTone(String? value) {
+    return switch (value) {
+      'paid' => PillTone.success,
+      'partial' => PillTone.medium,
+      'pending' => PillTone.medium,
+      'cancelled' => PillTone.high,
+      _ => PillTone.neutral,
+    };
+  }
+
+  PillTone _riskTone(String? value) {
+    return switch (value) {
+      'high' => PillTone.high,
+      'medium' => PillTone.medium,
+      'low' => PillTone.low,
+      _ => PillTone.neutral,
+    };
+  }
+
+  PillTone _documentTone(String? value) {
+    return switch (value) {
+      'verified' => PillTone.success,
+      'uploaded' => PillTone.medium,
+      _ => PillTone.neutral,
+    };
+  }
+
+  Color _documentStatusFill(String? value) {
+    return switch (value) {
+      'verified' => WoodGuardColors.success.withValues(alpha: 0.12),
+      'uploaded' => WoodGuardColors.amber.withValues(alpha: 0.14),
+      _ => WoodGuardColors.danger.withValues(alpha: 0.12),
+    };
+  }
+
+  Color _documentStatusAccent(String? value) {
+    return switch (value) {
+      'verified' => WoodGuardColors.success,
+      'uploaded' => const Color(0xFF9C6B15),
+      _ => WoodGuardColors.danger,
+    };
   }
 
   Widget _buildChoiceWrap<T>({
@@ -414,23 +711,17 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
-  (double, double)? _currentCoordinates(InvoiceDetail draft) {
-    if (draft.assessment.geolocationLatitude != null &&
-        draft.assessment.geolocationLongitude != null) {
-      return (
-        draft.assessment.geolocationLatitude!,
-        draft.assessment.geolocationLongitude!,
-      );
-    }
-    if (draft.sellerLatitude != null && draft.sellerLongitude != null) {
-      return (draft.sellerLatitude!, draft.sellerLongitude!);
-    }
-    return null;
-  }
-
-  Widget _buildHeader(InvoiceDetail draft) {
-    return Row(
+  Widget _buildMultiSelectWrap({
+    required String title,
+    required List<String> options,
+    required List<String> selectedValues,
+    required String Function(String) labelBuilder,
+    required ValueChanged<String> onTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+<<<<<<< HEAD
         IconButton.filledTonal(
           onPressed: () => Navigator.of(context).pop(_changed),
           icon: const Icon(Icons.arrow_back_rounded),
@@ -458,69 +749,253 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         ElevatedButton(
           onPressed: _saving || !_canEdit ? null : _save,
           child: Text(_saving ? 'Saving...' : 'Save Dossier'),
+=======
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((option) {
+            return FilterChip(
+              label: Text(labelBuilder(option)),
+              selected: selectedValues.contains(option),
+              onSelected: _canEdit ? (_) => onTap(option) : null,
+            );
+          }).toList(),
+>>>>>>> b441d82364d200e118dd68b4bcefa0f1e21dc742
         ),
       ],
     );
   }
 
-  Widget _buildSummaryCard(InvoiceDetail draft) {
+  void _toggleArraySelection({
+    required List<String> values,
+    required String value,
+    required void Function(List<String> nextValues) apply,
+  }) {
+    final nextValues = values.contains(value)
+        ? values.where((item) => item != value).toList()
+        : [...values, value];
+    setState(() => apply(nextValues));
+  }
+
+  List<Widget> _buildTopMetrics(InvoiceDetail draft, AppViewController view) {
+    final evidenceRecords = evidenceSections
+        .map((section) => draft.assessment.evidenceFor(section.key))
+        .toList();
+    final pendingEvidenceCount = evidenceRecords
+        .where((item) => item.status == 'missing' && item.files.isEmpty)
+        .length;
+    final uploadedEvidenceCount = evidenceRecords.fold<int>(
+      0,
+      (total, item) => total + item.files.length,
+    );
+    final verifiedSectionsCount = evidenceRecords
+        .where((item) => item.status == 'verified')
+        .length;
+
+    return [
+      MetricCard(
+        label: _copy.riskScore,
+        value: '${draft.risk.riskScore.round()}%',
+        icon: Icons.radar_rounded,
+        tone: MetricTone.warm,
+      ),
+      MetricCard(
+        label: _copy.coverage,
+        value: formatPercent(view.locale, draft.risk.coveragePercent),
+        icon: Icons.donut_large_rounded,
+      ),
+      MetricCard(
+        label: _copy.pendingEvidence,
+        value: pendingEvidenceCount.toString(),
+        icon: Icons.pending_actions_rounded,
+      ),
+      MetricCard(
+        label: _copy.uploadedEvidence,
+        value: uploadedEvidenceCount.toString(),
+        icon: Icons.upload_file_rounded,
+      ),
+      MetricCard(
+        label: _copy.verifiedSections,
+        value: verifiedSectionsCount.toString(),
+        icon: Icons.verified_rounded,
+      ),
+      MetricCard(
+        label: _copy.openExposure,
+        value: formatCurrency(view.locale, draft.remainingAmount),
+        icon: Icons.account_balance_wallet_rounded,
+        tone: MetricTone.warm,
+      ),
+    ];
+  }
+
+  Widget _buildHeader(InvoiceDetail draft) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconButton.filledTonal(
+              onPressed: () => Navigator.of(context).pop(_changed),
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    draft.companyName ??
+                        draft.sellerName ??
+                        draft.invoiceNumber,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '${_copy.selectedInvoice}: ${draft.invoiceNumber}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: WoodGuardColors.pine,
+                        ),
+                      ),
+                      StatusPill(
+                        label: _copy.translateInvoiceStatus(draft.status),
+                        tone: _invoiceStatusTone(draft.status),
+                        compact: true,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _saving || !_canEdit ? null : _save,
+            child: Text(_saving ? _copy.saving : _copy.saveInvoiceDossier),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard(InvoiceDetail draft, AppViewController view) {
+    final companyName =
+        draft.companyName ?? draft.sellerName ?? _copy.unassignedSupplier;
+    final companyCountry = normalizeText(draft.companyCountry) ?? _copy.unset;
+
     return WoodCard(
       tint: const Color(0xFFF3E5D8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Text(
+            draft.source == 'warehub'
+                ? _copy.orderHubInvoice
+                : _copy.manualIndex,
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(color: WoodGuardColors.pine),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            companyName,
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontSize: 28),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_copy.invoiceNumber}: ${draft.invoiceNumber}',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: WoodGuardColors.pine),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      draft.invoiceNumber,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    Text('Amount: ${formatCurrency(draft.amount)}'),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Open: ${formatCurrency(draft.remainingAmount)}',
-                      style: const TextStyle(
-                        color: WoodGuardColors.ember,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
+              StatusPill(
+                label: _copy.translateInvoiceStatus(draft.status),
+                tone: _invoiceStatusTone(draft.status),
+                compact: true,
               ),
               StatusPill(
-                label: translateRiskLevel(draft.risk.riskLevel),
-                tone: switch (draft.risk.riskLevel) {
-                  'high' => PillTone.high,
-                  'medium' => PillTone.medium,
-                  'low' => PillTone.low,
-                  _ => PillTone.neutral,
-                },
+                label: _copy.translateRiskLevel(draft.risk.riskLevel),
+                tone: _riskTone(draft.risk.riskLevel),
+                compact: true,
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          _buildFieldRow(
+            children: [
+              _buildSummaryFact(
+                label: _copy.amount,
+                value: formatCurrency(view.locale, draft.amount),
+                icon: Icons.receipt_long_rounded,
+              ),
+              _buildSummaryFact(
+                label: _copy.openShort,
+                value: formatCurrency(view.locale, draft.remainingAmount),
+                icon: Icons.account_balance_wallet_rounded,
+                valueColor: WoodGuardColors.ember,
+                emphasize: true,
+              ),
+            ],
+            breakpoint: 640,
+          ),
+          const SizedBox(height: 12),
+          _buildFieldRow(
+            children: [
+              _buildSummaryFact(
+                label: _copy.country,
+                value: companyCountry,
+                icon: Icons.public_rounded,
+              ),
+              _buildSummaryFact(
+                label: _copy.invoiceDate,
+                value: formatDate(view.locale, draft.invoiceDate),
+                icon: Icons.calendar_today_rounded,
+              ),
+            ],
+            breakpoint: 640,
+          ),
+          const SizedBox(height: 12),
+          _buildFieldRow(
+            children: [
+              _buildSummaryFact(
+                label: _copy.dueDate,
+                value: formatDate(view.locale, draft.dueDate),
+                icon: Icons.event_available_rounded,
+              ),
+              _buildSummaryFact(
+                label: _copy.productionDate,
+                value: formatDate(view.locale, draft.productionDate),
+                icon: Icons.inventory_2_rounded,
+              ),
+            ],
+            breakpoint: 640,
+          ),
           if (!_canEdit) ...[
             const SizedBox(height: 12),
-            const Text(
-              'This role can inspect the dossier but cannot write changes.',
-              style: TextStyle(color: WoodGuardColors.pine),
-            ),
-          ],
-          if (_message != null) ...[
-            const SizedBox(height: 12),
-            Text(
-              _message!,
-              style: TextStyle(
-                color:
-                    _message!.toLowerCase().contains('failed') ||
-                        _message!.toLowerCase().contains('error')
-                    ? WoodGuardColors.danger
-                    : WoodGuardColors.ember,
-                fontWeight: FontWeight.w700,
+            _buildInsetPanel(
+              tint: Colors.white.withValues(alpha: 0.44),
+              child: Text(
+                _copy.thisRoleReadOnly,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: WoodGuardColors.pine),
               ),
             ),
           ],
@@ -529,127 +1004,176 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
-  Widget _buildMetadataCard(InvoiceDetail draft) {
+  Widget _buildTabBar() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SegmentedButton<WorkspaceTab>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment<WorkspaceTab>(
+            value: WorkspaceTab.overview,
+            label: Text(_copy.overviewTab),
+            icon: const Icon(Icons.dashboard_customize_rounded),
+          ),
+          ButtonSegment<WorkspaceTab>(
+            value: WorkspaceTab.evidence,
+            label: Text(_copy.evidenceTab),
+            icon: const Icon(Icons.attach_file_rounded),
+          ),
+          ButtonSegment<WorkspaceTab>(
+            value: WorkspaceTab.analytics,
+            label: Text(_copy.analyticsTab),
+            icon: const Icon(Icons.analytics_rounded),
+          ),
+        ],
+        selected: <WorkspaceTab>{_activeTab},
+        onSelectionChanged: (selection) {
+          setState(() => _activeTab = selection.first);
+        },
+      ),
+    );
+  }
+
+  Widget _buildMetadataCard(InvoiceDetail draft, AppViewController view) {
+    final countries = _reference?.countries ?? const <CountryProfile>[];
+    final selectedCompanyCountry =
+        countries.any((country) => country.code == draft.companyCountry)
+        ? draft.companyCountry
+        : '';
+
     return WoodCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Metadata', style: Theme.of(context).textTheme.titleLarge),
+          Text(_copy.metadata, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           _buildInput(
             fieldKey: 'company_name',
-            label: 'Company Name',
+            label: _copy.companyName,
             value: draft.companyName ?? '',
             onChanged: (value) => draft.companyName = value,
             enabled: _canEdit,
           ),
           const SizedBox(height: 14),
-          _buildInput(
-            fieldKey: 'company_country',
-            label: 'Company Country',
-            value: draft.companyCountry ?? '',
-            onChanged: (value) => draft.companyCountry = value.toUpperCase(),
-            enabled: _canEdit,
-          ),
+          if (countries.isNotEmpty)
+            _buildDropdownField<String>(
+              fieldKey: ValueKey('company-country-${draft.companyCountry}'),
+              label: _copy.country,
+              value: selectedCompanyCountry,
+              items: [
+                DropdownMenuItem<String>(
+                  value: '',
+                  child: Text(_copy.selectCountry),
+                ),
+                ...countries.map(
+                  (country) => DropdownMenuItem<String>(
+                    value: country.code,
+                    child: Text('${country.name} (${country.code})'),
+                  ),
+                ),
+              ],
+              onChanged: _canEdit
+                  ? (value) => setState(
+                      () => draft.companyCountry = normalizeText(value),
+                    )
+                  : null,
+            )
+          else
+            _buildInput(
+              fieldKey: 'company_country',
+              label: _copy.country,
+              value: draft.companyCountry ?? '',
+              onChanged: (value) => draft.companyCountry = value.toUpperCase(),
+              enabled: _canEdit,
+            ),
           const SizedBox(height: 14),
           _buildInput(
             fieldKey: 'invoice_number',
-            label: 'Invoice Number',
+            label: _copy.invoiceNumber,
             value: draft.invoiceNumber,
             onChanged: (_) {},
             enabled: false,
           ),
           const SizedBox(height: 14),
           _buildChoiceWrap<String>(
-            title: 'Status',
+            title: _copy.status,
             options: statusOptions,
             currentValue: draft.status,
-            labelBuilder: translateInvoiceStatus,
+            labelBuilder: _copy.translateInvoiceStatus,
             onSelected: (value) => setState(() => draft.status = value),
           ),
           const SizedBox(height: 14),
-          Row(
+          _buildFieldRow(
             children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'amount',
-                  label: 'Amount',
-                  value: formatNullableDouble(draft.amount),
+              _buildInput(
+                fieldKey: 'amount',
+                label: _copy.amount,
+                value: formatNullableDouble(draft.amount),
+                onChanged: (value) =>
+                    draft.amount = parseNullableDouble(value) ?? draft.amount,
+                enabled: _canEdit,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              _buildInput(
+                fieldKey: 'remaining_amount',
+                label: _copy.remainingAmount,
+                value: formatNullableDouble(draft.remainingAmount),
+                onChanged: (value) => draft.remainingAmount =
+                    parseNullableDouble(value) ?? draft.remainingAmount,
+                enabled: _canEdit,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildFieldRow(
+            children: [
+              _buildDateField(
+                label: _copy.invoiceDate,
+                value: draft.invoiceDate,
+                locale: view.locale,
+                onTap: () => _pickDate(
+                  currentValue: draft.invoiceDate,
                   onChanged: (value) =>
-                      draft.amount = parseNullableDouble(value) ?? draft.amount,
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                      setState(() => draft.invoiceDate = value),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'remaining_amount',
-                  label: 'Remaining Amount',
-                  value: formatNullableDouble(draft.remainingAmount),
-                  onChanged: (value) => draft.remainingAmount =
-                      parseNullableDouble(value) ?? draft.remainingAmount,
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+              _buildDateField(
+                label: _copy.dueDate,
+                value: draft.dueDate,
+                locale: view.locale,
+                onTap: () => _pickDate(
+                  currentValue: draft.dueDate,
+                  onChanged: (value) => setState(() => draft.dueDate = value),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          Row(
+          _buildFieldRow(
             children: [
-              Expanded(
-                child: _buildDateField(
-                  label: 'Invoice Date',
-                  value: draft.invoiceDate,
-                  onTap: () => _pickDate(
-                    currentValue: draft.invoiceDate,
-                    onChanged: (value) =>
-                        setState(() => draft.invoiceDate = value),
-                  ),
+              _buildDateField(
+                label: _copy.productionDate,
+                value: draft.productionDate,
+                locale: view.locale,
+                onTap: () => _pickDate(
+                  currentValue: draft.productionDate,
+                  onChanged: (value) =>
+                      setState(() => draft.productionDate = value),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildDateField(
-                  label: 'Due Date',
-                  value: draft.dueDate,
-                  onTap: () => _pickDate(
-                    currentValue: draft.dueDate,
-                    onChanged: (value) => setState(() => draft.dueDate = value),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildDateField(
-                  label: 'Production Date',
-                  value: draft.productionDate,
-                  onTap: () => _pickDate(
-                    currentValue: draft.productionDate,
-                    onChanged: (value) =>
-                        setState(() => draft.productionDate = value),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildDateField(
-                  label: 'Import Date',
-                  value: draft.importDate,
-                  onTap: () => _pickDate(
-                    currentValue: draft.importDate,
-                    onChanged: (value) =>
-                        setState(() => draft.importDate = value),
-                  ),
+              _buildDateField(
+                label: _copy.importDate,
+                value: draft.importDate,
+                locale: view.locale,
+                onTap: () => _pickDate(
+                  currentValue: draft.importDate,
+                  onChanged: (value) =>
+                      setState(() => draft.importDate = value),
                 ),
               ),
             ],
@@ -657,7 +1181,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           const SizedBox(height: 14),
           _buildInput(
             fieldKey: 'notes',
-            label: 'Internal Notes',
+            label: _copy.internalNotes,
             value: draft.notes ?? '',
             onChanged: (value) => draft.notes = value,
             enabled: _canEdit,
@@ -673,11 +1197,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Seller Card', style: Theme.of(context).textTheme.titleLarge),
+          Text(_copy.sellerCard, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           _buildInput(
             fieldKey: 'seller_name',
-            label: 'Seller Name',
+            label: _copy.sellerName,
             value: draft.sellerName ?? '',
             onChanged: (value) => draft.sellerName = value,
             enabled: _canEdit,
@@ -685,246 +1209,57 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
           const SizedBox(height: 14),
           _buildInput(
             fieldKey: 'seller_address',
-            label: 'Address',
+            label: _copy.address,
             value: draft.sellerAddress ?? '',
             onChanged: (value) => draft.sellerAddress = value,
             enabled: _canEdit,
             maxLines: 3,
           ),
           const SizedBox(height: 14),
-          Row(
+          _buildFieldRow(
             children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'seller_phone',
-                  label: 'Phone',
-                  value: draft.sellerPhone ?? '',
-                  onChanged: (value) => draft.sellerPhone = value,
-                  enabled: _canEdit,
-                ),
+              _buildInput(
+                fieldKey: 'seller_phone',
+                label: _copy.phone,
+                value: draft.sellerPhone ?? '',
+                onChanged: (value) => draft.sellerPhone = value,
+                enabled: _canEdit,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'seller_email',
-                  label: 'Email',
-                  value: draft.sellerEmail ?? '',
-                  onChanged: (value) => draft.sellerEmail = value,
-                  enabled: _canEdit,
-                  keyboardType: TextInputType.emailAddress,
-                ),
+              _buildInput(
+                fieldKey: 'seller_email',
+                label: _copy.email,
+                value: draft.sellerEmail ?? '',
+                onChanged: (value) => draft.sellerEmail = value,
+                enabled: _canEdit,
               ),
             ],
           ),
           const SizedBox(height: 14),
-          Row(
+          _buildFieldRow(
             children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'seller_website',
-                  label: 'Website',
-                  value: draft.sellerWebsite ?? '',
-                  onChanged: (value) => draft.sellerWebsite = value,
-                  enabled: _canEdit,
-                  keyboardType: TextInputType.url,
-                ),
+              _buildInput(
+                fieldKey: 'seller_website',
+                label: _copy.website,
+                value: draft.sellerWebsite ?? '',
+                onChanged: (value) => draft.sellerWebsite = value,
+                enabled: _canEdit,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'seller_contact',
-                  label: 'Contact Person',
-                  value: draft.sellerContactPerson ?? '',
-                  onChanged: (value) => draft.sellerContactPerson = value,
-                  enabled: _canEdit,
-                ),
+              _buildInput(
+                fieldKey: 'seller_contact_person',
+                label: _copy.contactPerson,
+                value: draft.sellerContactPerson ?? '',
+                onChanged: (value) => draft.sellerContactPerson = value,
+                enabled: _canEdit,
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWoodSpecCard(InvoiceDetail draft) {
-    return WoodCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Wood Specification',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 16),
-          if (_reference != null) ...[
-            Text(
-              'Wood Species',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _reference!.woodSpecies.map((item) {
-                final selected = draft.assessment.woodSpecies.contains(item);
-                return FilterChip(
-                  label: Text(item.replaceAll('_', ' ')),
-                  selected: selected,
-                  onSelected: _canEdit
-                      ? (value) {
-                          setState(() {
-                            if (value) {
-                              draft.assessment.woodSpecies.add(item);
-                            } else {
-                              draft.assessment.woodSpecies.remove(item);
-                            }
-                          });
-                        }
-                      : null,
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Material Types',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _reference!.materialTypes.map((item) {
-                final selected = draft.assessment.materialTypes.contains(item);
-                return FilterChip(
-                  label: Text(item.replaceAll('_', ' ')),
-                  selected: selected,
-                  onSelected: _canEdit
-                      ? (value) {
-                          setState(() {
-                            if (value) {
-                              draft.assessment.materialTypes.add(item);
-                            } else {
-                              draft.assessment.materialTypes.remove(item);
-                            }
-                          });
-                        }
-                      : null,
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 14),
-          ],
-          _buildInput(
-            fieldKey: 'wood_memo',
-            label: 'Wood Specification Memo',
-            value: draft.assessment.woodSpecificationMemo ?? '',
-            onChanged: (value) =>
-                draft.assessment.woodSpecificationMemo = value,
-            enabled: _canEdit,
-            maxLines: 3,
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'origin_country',
-                  label: 'Country of Origin',
-                  value: draft.assessment.countryOfOrigin ?? '',
-                  onChanged: (value) =>
-                      draft.assessment.countryOfOrigin = value.toUpperCase(),
-                  enabled: _canEdit,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'quantity',
-                  label: 'Quantity',
-                  value: formatNullableDouble(draft.assessment.quantity),
-                  onChanged: (value) =>
-                      draft.assessment.quantity = parseNullableDouble(value),
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'quantity_unit',
-                  label: 'Quantity Unit',
-                  value: draft.assessment.quantityUnit ?? '',
-                  onChanged: (value) => draft.assessment.quantityUnit = value,
-                  enabled: _canEdit,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildDateField(
-                  label: 'Delivery Date',
-                  value: draft.assessment.deliveryDate,
-                  onTap: () => _pickDate(
-                    currentValue: draft.assessment.deliveryDate,
-                    onChanged: (value) =>
-                        setState(() => draft.assessment.deliveryDate = value),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRiskCard(InvoiceDetail draft) {
-    return WoodCard(
-      tint: const Color(0xFFE5EFE8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Risk Inputs', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
-          _buildChoiceWrap<String>(
-            title: 'Child Labor',
-            options: complianceOptions,
-            currentValue: draft.assessment.childLaborOk,
-            labelBuilder: translateComplianceChoice,
-            onSelected: (value) =>
-                setState(() => draft.assessment.childLaborOk = value),
-          ),
-          const SizedBox(height: 14),
-          _buildChoiceWrap<String>(
-            title: 'Human Rights',
-            options: complianceOptions,
-            currentValue: draft.assessment.humanRightsOk,
-            labelBuilder: translateComplianceChoice,
-            onSelected: (value) =>
-                setState(() => draft.assessment.humanRightsOk = value),
-          ),
-          const SizedBox(height: 14),
-          _buildChoiceWrap<String?>(
-            title: 'Personal Risk',
-            options: personalRiskOptions,
-            currentValue: draft.assessment.personalRiskLevel,
-            labelBuilder: translateRiskLevel,
-            onSelected: (value) =>
-                setState(() => draft.assessment.personalRiskLevel = value),
           ),
           const SizedBox(height: 14),
           _buildInput(
-            fieldKey: 'risk_reason',
-            label: 'Why?',
-            value: draft.assessment.riskReason ?? '',
-            onChanged: (value) => draft.assessment.riskReason = value,
+            fieldKey: 'seller_geolocation_label',
+            label: _copy.geolocationLabel,
+            value: draft.sellerGeolocationLabel ?? '',
+            onChanged: (value) => draft.sellerGeolocationLabel = value,
             enabled: _canEdit,
-            maxLines: 4,
           ),
         ],
       ),
@@ -933,133 +1268,116 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
 
   Widget _buildGeolocationCard(InvoiceDetail draft) {
     final coordinates = _currentCoordinates(draft);
+    final source =
+        draft.assessment.geolocationSourceText ??
+        draft.sellerGeolocationLabel ??
+        draft.sellerAddress ??
+        draft.sellerName ??
+        _copy.unset;
+
     return WoodCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Geolocation', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            _copy.geoSnapshot,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 16),
           _buildInput(
-            fieldKey: 'geo_label',
-            label: 'Geolocation Label',
-            value: draft.sellerGeolocationLabel ?? '',
-            onChanged: (value) => draft.sellerGeolocationLabel = value,
-            enabled: _canEdit,
-          ),
-          const SizedBox(height: 14),
-          _buildInput(
-            fieldKey: 'geo_source',
-            label: 'Geolocation Source',
+            fieldKey: 'assessment_geolocation_source',
+            label: _copy.geolocationSource,
             value: draft.assessment.geolocationSourceText ?? '',
             onChanged: (value) =>
                 draft.assessment.geolocationSourceText = value,
             enabled: _canEdit,
-            maxLines: 3,
+            maxLines: 2,
           ),
           const SizedBox(height: 14),
-          Row(
+          _buildFieldRow(
             children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'seller_lat',
-                  label: 'Seller Latitude',
-                  value: formatNullableDouble(draft.sellerLatitude),
-                  onChanged: (value) =>
-                      draft.sellerLatitude = parseNullableDouble(value),
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+              _buildInput(
+                fieldKey: 'assessment_latitude',
+                label: _copy.assessmentLatitude,
+                value: formatNullableDouble(
+                  draft.assessment.geolocationLatitude,
+                ),
+                onChanged: (value) => draft.assessment.geolocationLatitude =
+                    parseNullableDouble(value),
+                enabled: _canEdit,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'seller_lon',
-                  label: 'Seller Longitude',
-                  value: formatNullableDouble(draft.sellerLongitude),
-                  onChanged: (value) =>
-                      draft.sellerLongitude = parseNullableDouble(value),
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+              _buildInput(
+                fieldKey: 'assessment_longitude',
+                label: _copy.assessmentLongitude,
+                value: formatNullableDouble(
+                  draft.assessment.geolocationLongitude,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'assessment_lat',
-                  label: 'Assessment Latitude',
-                  value: formatNullableDouble(
-                    draft.assessment.geolocationLatitude,
-                  ),
-                  onChanged: (value) => draft.assessment.geolocationLatitude =
-                      parseNullableDouble(value),
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildInput(
-                  fieldKey: 'assessment_lon',
-                  label: 'Assessment Longitude',
-                  value: formatNullableDouble(
-                    draft.assessment.geolocationLongitude,
-                  ),
-                  onChanged: (value) => draft.assessment.geolocationLongitude =
-                      parseNullableDouble(value),
-                  enabled: _canEdit,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                onChanged: (value) => draft.assessment.geolocationLongitude =
+                    parseNullableDouble(value),
+                enabled: _canEdit,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: _locating ? null : _useCurrentLocation,
-              child: Text(
-                _locating
-                    ? 'Reading device location...'
-                    : 'Use Current Location',
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: _autofilling ? null : _autofillLocation,
-              child: Text(
-                _autofilling
-                    ? 'Resolving location...'
-                    : 'Auto Detect From Fields',
-              ),
-            ),
-          ),
-          if (coordinates != null) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _launchExternalUrl(
-                  buildMapUrl(coordinates.$1, coordinates.$2),
+          _buildInsetPanel(
+            tint: WoodGuardColors.sand.withValues(alpha: 0.42),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_copy.coordinates}: '
+                  '${coordinates == null ? _copy.unset : '${formatCoordinate(coordinates.$1)}, ${formatCoordinate(coordinates.$2)}'}',
                 ),
-                child: const Text('Open Map'),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  '${_copy.geolocationSource}: $source',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: WoodGuardColors.pine),
+                ),
+                const SizedBox(height: 12),
+                _buildFieldRow(
+                  children: [
+                    OutlinedButton(
+                      onPressed: _locating ? null : _useCurrentLocation,
+                      child: Text(
+                        _locating
+                            ? _copy.readingDeviceLocation
+                            : _copy.useCurrentLocation,
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: _autofilling ? null : _autofillLocation,
+                      child: Text(
+                        _autofilling
+                            ? _copy.resolvingLocation
+                            : _copy.autoDetectFromFields,
+                      ),
+                    ),
+                  ],
+                  breakpoint: 520,
+                ),
+                if (coordinates != null) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => _launchExternalUrl(
+                        buildMapUrl(coordinates.$1, coordinates.$2),
+                      ),
+                      child: Text(_copy.openMap),
+                    ),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1070,55 +1388,54 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Evidence', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            _copy.evidenceSections,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 16),
           ...evidenceSections.map((section) {
             final evidence = draft.assessment.evidenceFor(section.key);
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8F4ED),
-                  borderRadius: BorderRadius.circular(22),
-                ),
+              child: _buildInsetPanel(
+                tint: const Color(0xFFF8F4ED),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    _buildFieldRow(
                       children: [
-                        Expanded(
-                          child: Text(
-                            section.label,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
+                        Text(
+                          _copy.translateEvidenceSection(section.key),
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                         StatusPill(
-                          label: translateDocumentStatus(evidence.status),
-                          tone: switch (evidence.status) {
-                            'verified' => PillTone.success,
-                            'uploaded' => PillTone.medium,
-                            _ => PillTone.neutral,
-                          },
+                          label: _copy.translateDocumentStatus(evidence.status),
+                          tone: _documentTone(evidence.status),
+                          compact: true,
                         ),
                       ],
+                      breakpoint: 520,
                     ),
                     const SizedBox(height: 14),
-                    DropdownButtonFormField<String>(
-                      initialValue: evidence.status,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'missing',
-                          child: Text('Missing'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'uploaded',
-                          child: Text('Uploaded'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'verified',
-                          child: Text('Verified'),
-                        ),
+                    _buildDropdownField<String>(
+                      fieldKey: ValueKey(
+                        'status-${section.key}-${evidence.status}',
+                      ),
+                      label: _copy.status,
+                      value: evidence.status,
+                      fillColor: _documentStatusFill(evidence.status),
+                      borderColor: _documentStatusAccent(evidence.status),
+                      foregroundColor: _documentStatusAccent(evidence.status),
+                      items: [
+                        for (final status in const [
+                          'missing',
+                          'uploaded',
+                          'verified',
+                        ])
+                          DropdownMenuItem<String>(
+                            value: status,
+                            child: Text(_copy.translateDocumentStatus(status)),
+                          ),
                       ],
                       onChanged: _canEdit
                           ? (value) {
@@ -1127,12 +1444,11 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                               }
                             }
                           : null,
-                      decoration: const InputDecoration(labelText: 'Status'),
                     ),
                     const SizedBox(height: 14),
                     _buildInput(
                       fieldKey: 'memo_${section.key}',
-                      label: 'Memo',
+                      label: _copy.memo,
                       value: evidence.memo ?? '',
                       onChanged: (value) => evidence.memo = value,
                       enabled: _canEdit,
@@ -1147,8 +1463,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                             : () => _uploadEvidence(section),
                         child: Text(
                           _uploadingSection == section.key
-                              ? 'Uploading...'
-                              : 'Upload Evidence',
+                              ? _copy.uploading
+                              : _copy.uploadEvidence,
                         ),
                       ),
                     ),
@@ -1184,56 +1500,357 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
-  Widget _buildAuditCard() {
-    final auditItems = _audit?.items ?? const <AuditLogEntry>[];
+  Widget _buildWoodSpecCard(InvoiceDetail draft) {
+    final countries = _reference?.countries ?? const <CountryProfile>[];
+    final woodSpecies = _reference?.woodSpecies ?? const <String>[];
+    final materialTypes = _reference?.materialTypes ?? const <String>[];
+
     return WoodCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Recent Audit Trail',
+            _copy.woodSpecification,
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 16),
-          if (auditItems.isEmpty)
-            const EmptyState(
-              title: 'No audit events yet',
-              description:
-                  'Dossier changes, uploads and sync actions will appear here.',
+          _buildMultiSelectWrap(
+            title: _copy.woodSpecies,
+            options: woodSpecies,
+            selectedValues: draft.assessment.woodSpecies,
+            labelBuilder: _copy.translateWoodSpecies,
+            onTap: (value) => _toggleArraySelection(
+              values: draft.assessment.woodSpecies,
+              value: value,
+              apply: (next) => draft.assessment.woodSpecies = next,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildMultiSelectWrap(
+            title: _copy.materialTypes,
+            options: materialTypes,
+            selectedValues: draft.assessment.materialTypes,
+            labelBuilder: _copy.translateMaterialType,
+            onTap: (value) => _toggleArraySelection(
+              values: draft.assessment.materialTypes,
+              value: value,
+              apply: (next) => draft.assessment.materialTypes = next,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (countries.isNotEmpty)
+            _buildDropdownField<String>(
+              fieldKey: ValueKey('origin-${draft.assessment.countryOfOrigin}'),
+              label: _copy.countryOfOrigin,
+              value:
+                  countries.any(
+                    (country) =>
+                        country.code == draft.assessment.countryOfOrigin,
+                  )
+                  ? draft.assessment.countryOfOrigin
+                  : '',
+              items: [
+                DropdownMenuItem<String>(
+                  value: '',
+                  child: Text(_copy.selectCountry),
+                ),
+                ...countries.map(
+                  (country) => DropdownMenuItem<String>(
+                    value: country.code,
+                    child: Text('${country.name} (${country.code})'),
+                  ),
+                ),
+              ],
+              onChanged: _canEdit
+                  ? (value) => setState(
+                      () => draft.assessment.countryOfOrigin = normalizeText(
+                        value,
+                      ),
+                    )
+                  : null,
+            ),
+          const SizedBox(height: 14),
+          _buildFieldRow(
+            children: [
+              _buildInput(
+                fieldKey: 'quantity',
+                label: _copy.quantity,
+                value: formatNullableDouble(draft.assessment.quantity),
+                onChanged: (value) =>
+                    draft.assessment.quantity = parseNullableDouble(value),
+                enabled: _canEdit,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              _buildInput(
+                fieldKey: 'quantity_unit',
+                label: _copy.unit,
+                value: draft.assessment.quantityUnit ?? '',
+                onChanged: (value) => draft.assessment.quantityUnit = value,
+                enabled: _canEdit,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildFieldRow(
+            children: [
+              _buildInput(
+                fieldKey: 'slice_count',
+                label: _copy.sliceCount,
+                value: _sliceCountInput,
+                onChanged: (value) => setState(() {
+                  _sliceCountInput = value;
+                  draft.assessment.sliceCount = parseNullableInt(value);
+                }),
+                enabled: _canEdit,
+                keyboardType: TextInputType.number,
+              ),
+              _buildInput(
+                fieldKey: 'area_square_meters',
+                label: _copy.areaSquareMeters,
+                value: _areaSquareMetersInput,
+                onChanged: (value) => setState(() {
+                  _areaSquareMetersInput = value;
+                  draft.assessment.areaSquareMeters = parseNullableDouble(
+                    value,
+                  );
+                }),
+                enabled: _canEdit,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildDateField(
+            label: _copy.deliveryDate,
+            value: draft.assessment.deliveryDate,
+            locale: _view.locale,
+            onTap: () => _pickDate(
+              currentValue: draft.assessment.deliveryDate,
+              onChanged: (value) =>
+                  setState(() => draft.assessment.deliveryDate = value),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildInput(
+            fieldKey: 'wood_specification_memo',
+            label: _copy.woodSpecificationMemo,
+            value: draft.assessment.woodSpecificationMemo ?? '',
+            onChanged: (value) =>
+                draft.assessment.woodSpecificationMemo = value,
+            enabled: _canEdit,
+            maxLines: 4,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilesRecapCard(InvoiceDetail draft) {
+    return WoodCard(
+      tint: const Color(0xFFF0E7D6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _copy.currentFiles,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 16),
+          ...evidenceSections.map((section) {
+            final evidence = draft.assessment.evidenceFor(section.key);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildInsetPanel(
+                padding: const EdgeInsets.all(14),
+                child: _buildFieldRow(
+                  children: [
+                    Text(_copy.translateEvidenceSection(section.key)),
+                    Text(
+                      '${evidence.files.length} | '
+                      '${_copy.translateDocumentStatus(evidence.status)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                  breakpoint: 460,
+                  spacing: 10,
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiskInputsCard(InvoiceDetail draft) {
+    return WoodCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_copy.riskInputs, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          _buildChoiceWrap<String>(
+            title: _copy.childLabor,
+            options: complianceOptions,
+            currentValue: draft.assessment.childLaborOk,
+            labelBuilder: _copy.translateComplianceChoice,
+            onSelected: (value) =>
+                setState(() => draft.assessment.childLaborOk = value),
+          ),
+          const SizedBox(height: 14),
+          _buildChoiceWrap<String>(
+            title: _copy.humanRights,
+            options: complianceOptions,
+            currentValue: draft.assessment.humanRightsOk,
+            labelBuilder: _copy.translateComplianceChoice,
+            onSelected: (value) =>
+                setState(() => draft.assessment.humanRightsOk = value),
+          ),
+          const SizedBox(height: 14),
+          _buildChoiceWrap<String?>(
+            title: _copy.personalRiskAssessment,
+            options: personalRiskOptions,
+            currentValue: draft.assessment.personalRiskLevel,
+            labelBuilder: (value) =>
+                value == null ? _copy.unset : _copy.translateRiskLevel(value),
+            onSelected: (value) =>
+                setState(() => draft.assessment.personalRiskLevel = value),
+          ),
+          const SizedBox(height: 14),
+          _buildInput(
+            fieldKey: 'risk_reason',
+            label: _copy.why,
+            value: draft.assessment.riskReason ?? '',
+            onChanged: (value) => draft.assessment.riskReason = value,
+            enabled: _canEdit,
+            maxLines: 4,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiskRecapCard(InvoiceDetail draft, AppViewController view) {
+    return WoodCard(
+      tint: const Color(0xFFE5EFE8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _copy.riskBlockers,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${_copy.coverage}: '
+            '${formatPercent(view.locale, draft.risk.coveragePercent)}',
+          ),
+          const SizedBox(height: 6),
+          Text('${_copy.penalties}: ${draft.risk.penaltyPoints}'),
+          const SizedBox(height: 12),
+          if (draft.risk.blockers.isEmpty)
+            Text(
+              _copy.noAuditActivity,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: WoodGuardColors.pine),
             )
           else
-            ...auditItems.take(8).map((entry) {
+            ...draft.risk.blockers.map((blocker) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _buildInsetPanel(
+                  padding: const EdgeInsets.all(14),
+                  tint: WoodGuardColors.danger.withValues(alpha: 0.08),
+                  child: Text(
+                    _copy.translateBlocker(blocker),
+                    style: const TextStyle(
+                      color: WoodGuardColors.danger,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          if (draft.risk.breakdown.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              _copy.breakdown,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            ...draft.risk.breakdown.map((item) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _buildInsetPanel(
+                  padding: const EdgeInsets.all(14),
+                  child: _buildFieldRow(
+                    children: [
+                      Text(_copy.translateBreakdownLabel(item.key, item.label)),
+                      Text(
+                        '${item.awardedPoints} / ${item.weight}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                    breakpoint: 460,
+                    spacing: 10,
+                  ),
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuditCard(AppViewController view) {
+    final auditItems = _audit?.items ?? const <AuditLogEntry>[];
+    return WoodCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_copy.auditTrail, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          if (auditItems.isEmpty)
+            EmptyState(
+              title: _copy.auditTrail,
+              description: _copy.noAuditActivity,
+            )
+          else
+            ...auditItems.take(12).map((entry) {
+              final actorRole = entry.actorRole == null
+                  ? _copy.systemActor
+                  : _copy.translateRole(entry.actorRole);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F4ED),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: Row(
+                child: _buildInsetPanel(
+                  tint: const Color(0xFFF8F4ED),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              entry.action,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              entry.summary ?? 'No summary provided.',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: WoodGuardColors.pine),
-                            ),
-                          ],
+                      Text(
+                        _copy.translateAuditAction(entry.action),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _copy.translateAuditSummary(entry.summary) ??
+                            _copy.noSummaryProvided,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: WoodGuardColors.pine,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(height: 8),
                       Text(
-                        formatDateTime(entry.createdAt),
+                        '${_copy.actor}: '
+                        '${entry.actorUsername ?? _copy.systemActor} | '
+                        '$actorRole | ${entry.entityType} | '
+                        '${formatDateTime(view.locale, entry.createdAt)}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: WoodGuardColors.pine,
                         ),
@@ -1248,65 +1865,88 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     );
   }
 
-  Widget _buildRecapCard(InvoiceDetail draft) {
-    return WoodCard(
-      tint: const Color(0xFFF0E7D6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildOverviewTab(InvoiceDetail draft, AppViewController view) {
+    return Column(
+      children: [
+        ResponsiveMetricGrid(
+          maxColumns: 2,
+          minTileWidth: 160,
+          mainAxisExtent: 136,
+          children: _buildTopMetrics(draft, view).take(4).toList(),
+        ),
+        const SizedBox(height: 18),
+        _buildMetadataCard(draft, view),
+        const SizedBox(height: 18),
+        _buildSellerCard(draft),
+        const SizedBox(height: 18),
+        _buildGeolocationCard(draft),
+      ],
+    );
+  }
+
+  Widget _buildEvidenceTab(InvoiceDetail draft, AppViewController view) {
+    return Column(
+      children: [
+        ResponsiveMetricGrid(
+          maxColumns: 2,
+          minTileWidth: 160,
+          mainAxisExtent: 136,
+          children: _buildTopMetrics(draft, view).skip(2).take(4).toList(),
+        ),
+        const SizedBox(height: 18),
+        _buildEvidenceCard(draft),
+        const SizedBox(height: 18),
+        _buildWoodSpecCard(draft),
+        const SizedBox(height: 18),
+        _buildFilesRecapCard(draft),
+      ],
+    );
+  }
+
+  Widget _buildAnalyticsTab(InvoiceDetail draft, AppViewController view) {
+    return Column(
+      children: [
+        ResponsiveMetricGrid(
+          maxColumns: 2,
+          minTileWidth: 160,
+          mainAxisExtent: 136,
+          children: _buildTopMetrics(draft, view).take(4).toList(),
+        ),
+        const SizedBox(height: 18),
+        _buildRiskInputsCard(draft),
+        const SizedBox(height: 18),
+        _buildRiskRecapCard(draft, view),
+        const SizedBox(height: 18),
+        _buildAuditCard(view),
+      ],
+    );
+  }
+
+  Widget _buildLoadedState(AppViewController view) {
+    final draft = _draft!;
+    final body = switch (_activeTab) {
+      WorkspaceTab.overview => _buildOverviewTab(draft, view),
+      WorkspaceTab.evidence => _buildEvidenceTab(draft, view),
+      WorkspaceTab.analytics => _buildAnalyticsTab(draft, view),
+    };
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
         children: [
-          Text('Risk Recap', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          Text('Coverage: ${formatPercent(draft.risk.coveragePercent)}'),
-          const SizedBox(height: 6),
-          Text('Penalty points: ${draft.risk.penaltyPoints}'),
-          const SizedBox(height: 6),
-          Text(
-            'Child labor: ${translateComplianceChoice(draft.assessment.childLaborOk)}',
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Human rights: ${translateComplianceChoice(draft.assessment.humanRightsOk)}',
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Last reviewed: ${formatDateTime(draft.assessment.lastReviewedAt)}',
-          ),
-          if (draft.risk.breakdown.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text('Breakdown', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 10),
-            ...draft.risk.breakdown.map((item) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(item.label)),
-                    Text(
-                      '${item.awardedPoints} / ${item.weight}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-              );
-            }),
+          _buildHeader(draft),
+          const SizedBox(height: 18),
+          _buildSummaryCard(draft, view),
+          if (_message != null) ...[
+            const SizedBox(height: 18),
+            InlineStatusBanner(message: _message!, isError: _messageIsError),
           ],
-          if (draft.risk.blockers.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text('Blockers', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 10),
-            ...draft.risk.blockers.map((blocker) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  blocker,
-                  style: const TextStyle(
-                    color: WoodGuardColors.danger,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              );
-            }),
-          ],
+          const SizedBox(height: 18),
+          _buildTabBar(),
+          const SizedBox(height: 18),
+          body,
         ],
       ),
     );
@@ -1314,6 +1954,8 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final view = context.watch<AppViewController>();
+
     return PopScope<bool>(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -1325,48 +1967,14 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
       child: Scaffold(
         body: WoodGuardSurface(
           child: _loading && _draft == null
-              ? const BusyState(label: 'Loading dossier...')
+              ? BusyState(label: _copy.loadingDossier)
               : _draft == null
               ? EmptyState(
-                  title: 'Invoice not available',
-                  description:
-                      _message ??
-                      'The invoice could not be loaded. Refresh the queue and try again.',
+                  title: _copy.invoiceUnavailable,
+                  description: _message ?? _copy.invoiceUnavailableHint,
                 )
-              : _buildLoadedState(),
+              : _buildLoadedState(view),
         ),
-      ),
-    );
-  }
-
-  Widget _buildLoadedState() {
-    final draft = _draft!;
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
-        children: [
-          _buildHeader(draft),
-          const SizedBox(height: 18),
-          _buildSummaryCard(draft),
-          const SizedBox(height: 18),
-          _buildMetadataCard(draft),
-          const SizedBox(height: 18),
-          _buildSellerCard(draft),
-          const SizedBox(height: 18),
-          _buildWoodSpecCard(draft),
-          const SizedBox(height: 18),
-          _buildRiskCard(draft),
-          const SizedBox(height: 18),
-          _buildGeolocationCard(draft),
-          const SizedBox(height: 18),
-          _buildEvidenceCard(draft),
-          const SizedBox(height: 18),
-          _buildAuditCard(),
-          const SizedBox(height: 18),
-          _buildRecapCard(draft),
-        ],
       ),
     );
   }

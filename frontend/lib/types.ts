@@ -28,6 +28,8 @@ export interface AssessmentPayload {
   country_of_origin: string | null;
   quantity: number | null;
   quantity_unit: string | null;
+  slice_count: number | null;
+  area_square_meters: number | null;
   delivery_date: string | null;
   child_labor_ok: ComplianceChoice;
   human_rights_ok: ComplianceChoice;
@@ -104,6 +106,7 @@ export interface InvoiceListResponse {
 export interface SupplierSummary {
   name: string;
   country: string | null;
+  email: string | null;
   invoice_count: number;
   high_risk_count: number;
   total_amount: number;
