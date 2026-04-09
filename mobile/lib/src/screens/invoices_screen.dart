@@ -4,11 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/app_session_controller.dart';
+import '../core/factory_grouping.dart';
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../models/domain.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/filter_strip.dart';
+import '../widgets/invoice_summary_card.dart';
 import 'invoice_detail_screen.dart';
+
+const _allFactoriesValue = '__all_factories__';
 
 class InvoicesScreen extends StatefulWidget {
   const InvoicesScreen({
@@ -27,11 +32,12 @@ class InvoicesScreen extends StatefulWidget {
 class _InvoicesScreenState extends State<InvoicesScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
-  List<InvoiceSummary> _items = const [];
+  FactoryListResponse? _response;
   bool _loading = true;
   String? _message;
   String? _status;
   String? _riskLevel;
+  String? _selectedFactoryName;
 
   @override
   void initState() {
@@ -61,15 +67,26 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     });
 
     try {
-      final response = await context.read<AppSessionController>().getInvoices(
+      final invoices = await context.read<AppSessionController>().getInvoices(
         search: _searchController.text,
         status: _status,
         riskLevel: _riskLevel,
       );
+      final response = buildFactoryListResponse(invoices.items);
       if (!mounted) {
         return;
       }
-      setState(() => _items = response.items);
+
+      final hasSelectedFactory =
+          _selectedFactoryName == null ||
+          response.items.any((item) => item.name == _selectedFactoryName);
+
+      setState(() {
+        _response = response;
+        if (!hasSelectedFactory) {
+          _selectedFactoryName = null;
+        }
+      });
     } on ApiException catch (error) {
       if (!mounted) {
         return;
@@ -85,6 +102,26 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   void _scheduleSearch() {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), _load);
+  }
+
+  List<_FactoryInvoiceItem> get _visibleInvoices {
+    final response = _response;
+    if (response == null) {
+      return const [];
+    }
+
+    final items = <_FactoryInvoiceItem>[];
+    for (final factory in response.items) {
+      if (_selectedFactoryName != null &&
+          factory.name != _selectedFactoryName) {
+        continue;
+      }
+      for (final invoice in factory.invoices) {
+        items.add(_FactoryInvoiceItem(factory: factory, invoice: invoice));
+      }
+    }
+    items.sort((left, right) => right.invoice.id.compareTo(left.invoice.id));
+    return items;
   }
 
   Future<void> _openInvoice(InvoiceSummary item) async {
@@ -115,6 +152,18 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AppSessionController>().currentUser;
+    final response = _response;
+    final visibleInvoices = _visibleInvoices;
+    final visibleFactories = {
+      for (final item in visibleInvoices) item.factory.name,
+    }.length;
+    final highRiskInvoices = visibleInvoices
+        .where((item) => item.invoice.risk.riskLevel == 'high')
+        .length;
+    final exposure = visibleInvoices.fold<double>(
+      0,
+      (sum, item) => sum + item.invoice.remainingAmount,
+    );
 
     return Scaffold(
       floatingActionButton: canCreateManualInvoice(user?.role)
@@ -132,10 +181,44 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              const SectionHeader(
-                title: 'Mobile Dossiers',
+              SectionHeader(
+                title: 'Invoice Queue',
                 subtitle:
-                    'Search, filter, open and update invoice dossiers from the same backend as the web workspace.',
+                    'All invoice dossiers from every factory, loaded through the factory feed.',
+                trailing: StatusPill(
+                  label: '${visibleInvoices.length} results',
+                ),
+              ),
+              const SizedBox(height: 18),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.18,
+                children: [
+                  MetricCard(
+                    label: 'Invoices',
+                    value: visibleInvoices.length.toString(),
+                  ),
+                  MetricCard(
+                    label: 'Factories',
+                    value: visibleFactories.toString(),
+                  ),
+                  MetricCard(
+                    label: 'Open Exposure',
+                    value: formatCurrency(exposure),
+                    tone: MetricTone.warm,
+                  ),
+                  MetricCard(
+                    label: 'High Risk',
+                    value: highRiskInvoices.toString(),
+                    tone: highRiskInvoices > 0
+                        ? MetricTone.warm
+                        : MetricTone.defaultTone,
+                  ),
+                ],
               ),
               const SizedBox(height: 18),
               WoodCard(
@@ -150,16 +233,40 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         prefixIcon: Icon(Icons.search_rounded),
                       ),
                     ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedFactoryName ?? _allFactoriesValue,
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: _allFactoriesValue,
+                          child: Text('All factories'),
+                        ),
+                        ...?response?.items.map(
+                          (factory) => DropdownMenuItem<String>(
+                            value: factory.name,
+                            child: Text(factory.name),
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedFactoryName = value == _allFactoriesValue
+                              ? null
+                              : value;
+                        });
+                      },
+                      decoration: const InputDecoration(labelText: 'Factory'),
+                    ),
                     const SizedBox(height: 16),
-                    _FilterStrip(
+                    FilterStrip(
                       label: 'Status',
                       currentValue: _status,
                       options: const [
-                        _FilterOption(label: 'All', value: null),
-                        _FilterOption(label: 'Pending', value: 'pending'),
-                        _FilterOption(label: 'Paid', value: 'paid'),
-                        _FilterOption(label: 'Draft', value: 'draft'),
-                        _FilterOption(label: 'Partial', value: 'partial'),
+                        FilterOption(label: 'All', value: null),
+                        FilterOption(label: 'Pending', value: 'pending'),
+                        FilterOption(label: 'Paid', value: 'paid'),
+                        FilterOption(label: 'Draft', value: 'draft'),
+                        FilterOption(label: 'Partial', value: 'partial'),
                       ],
                       onChanged: (value) {
                         setState(() => _status = value);
@@ -167,14 +274,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    _FilterStrip(
+                    FilterStrip(
                       label: 'Risk level',
                       currentValue: _riskLevel,
                       options: const [
-                        _FilterOption(label: 'All', value: null),
-                        _FilterOption(label: 'High', value: 'high'),
-                        _FilterOption(label: 'Medium', value: 'medium'),
-                        _FilterOption(label: 'Low', value: 'low'),
+                        FilterOption(label: 'All', value: null),
+                        FilterOption(label: 'High', value: 'high'),
+                        FilterOption(label: 'Medium', value: 'medium'),
+                        FilterOption(label: 'Low', value: 'low'),
                       ],
                       onChanged: (value) {
                         setState(() => _riskLevel = value);
@@ -185,110 +292,27 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              if (_loading && _items.isEmpty)
+              if (_loading && response == null)
                 const BusyState(label: 'Loading invoice queue...')
-              else if (_items.isEmpty)
+              else if (visibleInvoices.isEmpty)
                 EmptyState(
                   title: 'No dossiers matched',
                   description:
                       _message ??
-                      'Try a broader search or sync fresh invoice data from the account tab.',
+                      'Try another factory or relax the search and risk filters.',
                 )
               else
-                ..._items.map((item) {
-                  final tone = switch (item.risk.riskLevel) {
-                    'high' => PillTone.high,
-                    'medium' => PillTone.medium,
-                    'low' => PillTone.low,
-                    _ => PillTone.neutral,
-                  };
-
-                  return Padding(
+                ...visibleInvoices.map(
+                  (item) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: InkWell(
-                      onTap: () => _openInvoice(item),
-                      borderRadius: BorderRadius.circular(28),
-                      child: WoodCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.companyName ??
-                                            item.sellerName ??
-                                            'Unassigned supplier',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleMedium,
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        item.invoiceNumber,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: WoodGuardColors.pine,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                StatusPill(
-                                  label: translateRiskLevel(
-                                    item.risk.riskLevel,
-                                  ),
-                                  tone: tone,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  translateInvoiceStatus(item.status),
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                                Text(
-                                  formatDate(item.dueDate),
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(color: WoodGuardColors.pine),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  formatCurrency(item.amount),
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(fontSize: 22),
-                                ),
-                                Text(
-                                  '${formatCurrency(item.remainingAmount)} open',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: WoodGuardColors.ember,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                    child: InvoiceSummaryCard(
+                      invoice: item.invoice,
+                      factoryName: item.factory.name,
+                      showFactoryName: _selectedFactoryName == null,
+                      onTap: () => _openInvoice(item.invoice),
                     ),
-                  );
-                }),
+                  ),
+                ),
             ],
           ),
         ),
@@ -297,47 +321,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 }
 
-class _FilterOption {
-  const _FilterOption({required this.label, required this.value});
+class _FactoryInvoiceItem {
+  const _FactoryInvoiceItem({required this.factory, required this.invoice});
 
-  final String label;
-  final String? value;
-}
-
-class _FilterStrip extends StatelessWidget {
-  const _FilterStrip({
-    required this.label,
-    required this.currentValue,
-    required this.options,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String? currentValue;
-  final List<_FilterOption> options;
-  final ValueChanged<String?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: options.map((option) {
-            return ChoiceChip(
-              label: Text(option.label),
-              selected: currentValue == option.value,
-              onSelected: (_) => onChanged(option.value),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
+  final FactorySummary factory;
+  final InvoiceSummary invoice;
 }
 
 class _ManualInvoiceSheet extends StatefulWidget {
@@ -387,7 +375,7 @@ class _ManualInvoiceSheetState extends State<_ManualInvoiceSheet> {
         }
       });
     } catch (_) {
-      // A country dropdown is helpful but not required to create a manual invoice.
+      // Country reference is optional for the manual mobile shortcut.
     } finally {
       if (mounted) {
         setState(() => _loadingReference = false);

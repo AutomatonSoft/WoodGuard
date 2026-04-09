@@ -441,7 +441,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                draft.companyName ?? draft.sellerName ?? draft.invoiceNumber,
+                draft.sellerName ?? draft.companyName ?? draft.invoiceNumber,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 4),

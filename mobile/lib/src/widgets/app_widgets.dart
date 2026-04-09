@@ -19,11 +19,25 @@ class WoodGuardSurface extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFFF7F1E8), Color(0xFFE9E0D0), Color(0xFFF4EFE5)],
+          colors: [Color(0xFF6489D1), Color(0xFF36569B)],
         ),
       ),
       child: SafeArea(
-        child: Padding(padding: padding, child: child),
+        child: Stack(
+          children: [
+            const Positioned(
+              top: -40,
+              left: -70,
+              child: _AmbientBlob(size: 220, color: Color(0x40FFFFFF)),
+            ),
+            const Positioned(
+              right: -90,
+              bottom: 40,
+              child: _AmbientBlob(size: 280, color: Color(0x267EA7FF)),
+            ),
+            Padding(padding: padding, child: child),
+          ],
+        ),
       ),
     );
   }
@@ -45,14 +59,14 @@ class WoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: tint ?? Colors.white.withValues(alpha: 0.92),
+        color: tint ?? WoodGuardColors.panel,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.72)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.34)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x16000000),
-            blurRadius: 24,
-            offset: Offset(0, 14),
+            color: Color(0x24111F46),
+            blurRadius: 32,
+            offset: Offset(0, 16),
           ),
         ],
       ),
@@ -117,10 +131,10 @@ class StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = switch (tone) {
-      PillTone.high => const Color(0xFFF8DDD7),
-      PillTone.medium => const Color(0xFFF9EBCF),
-      PillTone.low => const Color(0xFFE0EFE8),
-      PillTone.success => const Color(0xFFDCEFE5),
+      PillTone.high => const Color(0x24E26172),
+      PillTone.medium => const Color(0x24F0A945),
+      PillTone.low => const Color(0x241DB97B),
+      PillTone.success => const Color(0x241DB97B),
       PillTone.neutral => WoodGuardColors.sand,
     };
     final foreground = switch (tone) {
@@ -166,10 +180,10 @@ class MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = switch (tone) {
       MetricTone.defaultTone => (
-        const Color(0xFF244034),
-        const Color(0xFF345446),
+        const Color(0xFF2F67FF),
+        const Color(0xFF234FCA),
       ),
-      MetricTone.warm => (const Color(0xFF8A4A24), const Color(0xFFC86D3A)),
+      MetricTone.warm => (const Color(0xFFF0A945), const Color(0xFFE17F35)),
     };
 
     return Container(
@@ -180,6 +194,13 @@ class MetricCard extends StatelessWidget {
           colors: [colors.$1, colors.$2],
         ),
         borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x242A50A8),
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -255,9 +276,27 @@ class BusyState extends StatelessWidget {
             label,
             style: Theme.of(
               context,
-            ).textTheme.bodyLarge?.copyWith(color: WoodGuardColors.pine),
+            ).textTheme.bodyLarge?.copyWith(color: Colors.white),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AmbientBlob extends StatelessWidget {
+  const _AmbientBlob({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
     );
   }

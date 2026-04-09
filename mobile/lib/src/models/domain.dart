@@ -506,6 +506,62 @@ class InvoiceListResponse {
   }
 }
 
+class FactorySummary {
+  FactorySummary({
+    required this.name,
+    this.country,
+    required this.invoiceCount,
+    required this.highRiskCount,
+    required this.totalAmount,
+    required this.remainingAmount,
+    required this.invoices,
+  });
+
+  final String name;
+  final String? country;
+  final int invoiceCount;
+  final int highRiskCount;
+  final double totalAmount;
+  final double remainingAmount;
+  final List<InvoiceSummary> invoices;
+
+  factory FactorySummary.fromJson(Map<String, dynamic> json) {
+    return FactorySummary(
+      name: json['name']?.toString() ?? '',
+      country: json['country']?.toString(),
+      invoiceCount: _intOf(json['invoice_count']),
+      highRiskCount: _intOf(json['high_risk_count']),
+      totalAmount: _doubleOf(json['total_amount']),
+      remainingAmount: _doubleOf(json['remaining_amount']),
+      invoices: (json['invoices'] as List? ?? const [])
+          .map((item) => InvoiceSummary.fromJson(_mapOf(item)))
+          .toList(),
+    );
+  }
+}
+
+class FactoryListResponse {
+  FactoryListResponse({
+    required this.items,
+    required this.total,
+    required this.invoiceTotal,
+  });
+
+  final List<FactorySummary> items;
+  final int total;
+  final int invoiceTotal;
+
+  factory FactoryListResponse.fromJson(Map<String, dynamic> json) {
+    return FactoryListResponse(
+      items: (json['items'] as List? ?? const [])
+          .map((item) => FactorySummary.fromJson(_mapOf(item)))
+          .toList(),
+      total: _intOf(json['total']),
+      invoiceTotal: _intOf(json['invoice_total']),
+    );
+  }
+}
+
 class SupplierSummary {
   SupplierSummary({
     required this.name,

@@ -160,6 +160,57 @@ class InvoiceCreate(InvoiceMetadataUpdate):
     status: InvoiceStatus = InvoiceStatus.pending
 
 
+class WarehubCountryItem(BaseModel):
+    id: int | None = None
+    name: str | None = None
+    code: str | None = None
+
+
+class WarehubOrderItem(BaseModel):
+    id: int | None = None
+    title: str | None = None
+    status: str | None = None
+    status_display: str | None = None
+
+
+class WarehubEmployeeItem(BaseModel):
+    id: int | None = None
+    username: str | None = None
+    full_name: str | None = None
+
+
+class WarehubFactoryInvoicePayload(BaseModel):
+    id: int
+    invoice_number: str
+    balance: float
+    total_paid: float
+    remaining_amount: float
+    status: str
+    status_display: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    due_date: date | None = None
+    notes: str | None = None
+    order: WarehubOrderItem | None = None
+    employee: WarehubEmployeeItem | None = None
+
+
+class WarehubFactoryPayload(BaseModel):
+    id: int
+    name: str | None = None
+    email: str | None = None
+    contact_person: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    country: WarehubCountryItem | None = None
+    invoices_count: int | None = None
+    invoices: list[WarehubFactoryInvoicePayload] = Field(default_factory=list)
+
+
+class WarehubFactoriesPayload(BaseModel):
+    factories: list[WarehubFactoryPayload]
+
+
 class WarehubInvoiceItem(BaseModel):
     id: int
     invoice_number: str
@@ -167,10 +218,26 @@ class WarehubInvoiceItem(BaseModel):
     total_paid: float
     remaining_amount: float
     status: str
+    status_display: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     due_date: date | None = None
     notes: str | None = None
+    factory_id: int | None = None
+    factory_name: str | None = None
+    factory_email: str | None = None
+    factory_contact_person: str | None = None
+    factory_phone: str | None = None
+    factory_address: str | None = None
+    factory_country_code: str | None = None
+    factory_country_name: str | None = None
+    order_id: int | None = None
+    order_title: str | None = None
+    order_status: str | None = None
+    employee_id: int | None = None
+    employee_username: str | None = None
+    employee_full_name: str | None = None
+    raw_payload: dict = Field(default_factory=dict)
 
 
 class WarehubSyncRequest(BaseModel):

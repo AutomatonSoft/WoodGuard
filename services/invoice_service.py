@@ -26,6 +26,7 @@ from models.invoice import (
     RiskLevel,
     RiskSummary,
     SupplierSummary,
+    WarehubInvoiceItem,
     WarehubSyncRequest,
     WarehubSyncResult,
     WoodSpecies,
@@ -144,6 +145,46 @@ def _meaningful_company_name(value: str | None) -> str | None:
     if trimmed.casefold() == settings.default_company_name.casefold():
         return None
     return trimmed
+
+
+def _normalized_text(value: str | None) -> str | None:
+    trimmed = (value or "").strip()
+    return trimmed or None
+
+
+def _apply_warehub_supplier(record: InvoiceRecord, item: WarehubInvoiceItem) -> None:
+    factory_name = _normalized_text(item.factory_name)
+    factory_email = _normalized_text(item.factory_email)
+    factory_contact_person = _normalized_text(item.factory_contact_person)
+    factory_phone = _normalized_text(item.factory_phone)
+    factory_address = _normalized_text(item.factory_address)
+    factory_country_code = _normalized_text(item.factory_country_code)
+    factory_country_name = _normalized_text(item.factory_country_name)
+
+    if factory_name:
+        record.seller_name = factory_name
+
+    if factory_email:
+        record.seller_email = factory_email
+
+    if factory_contact_person:
+        record.seller_contact_person = factory_contact_person
+
+    if factory_phone:
+        record.seller_phone = factory_phone
+
+    if factory_address:
+        record.seller_address = factory_address
+        if not _normalized_text(record.seller_geolocation_label):
+            record.seller_geolocation_label = factory_address
+
+    if factory_country_code or factory_country_name:
+        _apply_country(record, factory_country_code or factory_country_name)
+        if factory_country_name:
+            record.company_country_name = factory_country_name
+
+    if _meaningful_company_name(record.company_name) is None:
+        record.company_name = record.seller_name or settings.default_company_name
 
 
 def _autofill_geolocation(record: InvoiceRecord, *, force: bool = False) -> None:
@@ -447,9 +488,10 @@ def sync_warehub_invoices(
         record.warehub_created_at = item.created_at
         record.warehub_updated_at = item.updated_at
         record.synced_at = synced_at
-        record.raw_payload = item.model_dump(mode="json")
-        if not record.company_name:
-            record.company_name = settings.default_company_name
+        record.raw_payload = item.raw_payload or item.model_dump(mode="json")
+        _apply_warehub_supplier(record, item)
+        if _meaningful_company_name(record.company_name) is None:
+            record.company_name = record.seller_name or settings.default_company_name
         if record.company_country:
             _apply_country(record, record.company_country)
         _autofill_geolocation(record)
@@ -498,7 +540,11 @@ def build_dashboard_metrics(db: Session) -> DashboardMetrics:
         if item.synced_at and (latest_sync_at is None or item.synced_at > latest_sync_at):
             latest_sync_at = item.synced_at
 
-        supplier_name = item.company_name or item.seller_name or settings.default_company_name
+        supplier_name = (
+            _meaningful_company_name(item.company_name)
+            or item.seller_name
+            or settings.default_company_name
+        )
         supplier = suppliers.get(supplier_name)
         if supplier is None:
             supplier = SupplierSummary(
@@ -523,7 +569,9 @@ def build_dashboard_metrics(db: Session) -> DashboardMetrics:
     average_coverage = round((coverage_total / len(summaries)) if summaries else 0.0, 1)
     non_eu_suppliers = len(
         {
-            item.company_name or item.seller_name or settings.default_company_name
+            _meaningful_company_name(item.company_name)
+            or item.seller_name
+            or settings.default_company_name
             for item in summaries
             if not item.company_is_eu
         }

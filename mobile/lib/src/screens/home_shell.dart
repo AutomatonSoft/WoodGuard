@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'account_screen.dart';
-import 'dashboard_screen.dart';
+import 'factories_screen.dart';
 import 'invoices_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -22,7 +22,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      DashboardScreen(revision: _revision),
+      FactoriesScreen(revision: _revision, onDataChanged: _notifyDataChanged),
       InvoicesScreen(revision: _revision, onDataChanged: _notifyDataChanged),
       AccountScreen(revision: _revision, onDataChanged: _notifyDataChanged),
     ];
@@ -36,9 +36,9 @@ class _HomeShellState extends State<HomeShell> {
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Overview',
+            icon: Icon(Icons.factory_outlined),
+            selectedIcon: Icon(Icons.factory_rounded),
+            label: 'Factories',
           ),
           NavigationDestination(
             icon: Icon(Icons.inventory_2_outlined),

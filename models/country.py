@@ -12,9 +12,11 @@ class CountryProfile(BaseModel):
 
 COUNTRY_DATA: dict[str, CountryProfile] = {
     "CN": CountryProfile(code="CN", name="China", is_eu=False, base_risk=12),
+    "CZ": CountryProfile(code="CZ", name="Czech Republic", is_eu=True, base_risk=0),
     "DE": CountryProfile(code="DE", name="Germany", is_eu=True, base_risk=0),
     "EE": CountryProfile(code="EE", name="Estonia", is_eu=True, base_risk=0),
     "FI": CountryProfile(code="FI", name="Finland", is_eu=True, base_risk=0),
+    "IT": CountryProfile(code="IT", name="Italy", is_eu=True, base_risk=0),
     "LT": CountryProfile(code="LT", name="Lithuania", is_eu=True, base_risk=0),
     "LV": CountryProfile(code="LV", name="Latvia", is_eu=True, base_risk=0),
     "NO": CountryProfile(code="NO", name="Norway", is_eu=False, base_risk=2),
